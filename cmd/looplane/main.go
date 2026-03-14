@@ -246,6 +246,21 @@ func run(args []string) error {
 		}
 		fmt.Printf("%s://%s/%s/\n", scheme, strings.TrimSuffix(*addr, "/"), routeName)
 		return nil
+	case "dashboard":
+		fs := flag.NewFlagSet("dashboard", flag.ContinueOnError)
+		addr := fs.String("addr", "127.0.0.1:7777", "looplane proxy address")
+		hostSuffix := fs.String("host-suffix", "", "optional host-based routing suffix (for example localtest.me)")
+		https := fs.Bool("https", false, "print HTTPS URLs for TLS-enabled local proxy setups")
+		timeout := fs.Duration("timeout", 2*time.Second, "health check timeout")
+		if err := fs.Parse(commandArgs); err != nil {
+			return err
+		}
+		routes, err := store.Load()
+		if err != nil {
+			return err
+		}
+		printDashboard(os.Stdout, routes, app.CheckRoutes(routes, *timeout), dashboardOptions{Addr: *addr, HostSuffix: *hostSuffix, HTTPS: *https})
+		return nil
 	case "completion":
 		if len(commandArgs) != 1 {
 			return errors.New("usage: looplane completion [bash|zsh|fish|powershell]")
@@ -349,6 +364,8 @@ Usage:
                                               Start reverse proxy (default 127.0.0.1:7777)
   looplane open NAME [--addr A] [--host-suffix SUFFIX] [--https] [--store PATH]
                                               Print the stable URL for a configured route
+  looplane dashboard [--addr A] [--host-suffix SUFFIX] [--https] [--timeout D] [--store PATH]
+                                              Show route health, stable URLs, and quick follow-up commands
   looplane completion SHELL                    Print a shell completion script
 
 Examples:
@@ -365,6 +382,7 @@ Examples:
   looplane open api
   looplane open api --host-suffix localtest.me
   looplane open api --host-suffix localtest.me --https
+  looplane dashboard --host-suffix localtest.me
   looplane serve --addr 127.0.0.1:7777
   looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me
   looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me --tls-cert ./certs/local.pem --tls-key ./certs/local-key.pem
@@ -455,7 +473,7 @@ _looplane() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="add rm import ls serve open completion help"
+    local commands="add rm import ls serve open dashboard completion help"
     local -a store_args
     mapfile -t store_args < <(_looplane_store_args)
 
@@ -487,6 +505,9 @@ _looplane() {
             ;;
         serve)
             COMPREPLY=( $(compgen -W "--addr --host-suffix --tls-cert --tls-key --watch --store" -- "$cur") )
+            ;;
+        dashboard)
+            COMPREPLY=( $(compgen -W "--addr --host-suffix --https --timeout --store" -- "$cur") )
             ;;
         open)
             if [[ "$cur" == -* ]]; then
@@ -544,7 +565,7 @@ _looplane() {
   typeset -A opt_args
 
   _arguments -C \
-    '1:command:((add:"Add or update a route" rm:"Remove a route" import:"Import routes" ls:"List routes" serve:"Start proxy" open:"Print stable URL" completion:"Print completions" help:"Show help"))' \
+    '1:command:((add:"Add or update a route" rm:"Remove a route" import:"Import routes" ls:"List routes" serve:"Start proxy" open:"Print stable URL" dashboard:"Show route dashboard" completion:"Print completions" help:"Show help"))' \
     '*::arg:->args'
 
   case $state in
@@ -556,6 +577,9 @@ _looplane() {
         open)
           _looplane_routes
           _arguments '--addr[listen address]:address:' '--host-suffix[optional host-based routing suffix]:suffix:' '--https[print an HTTPS URL for TLS-enabled local proxy setups]' '--store[path to routes store]:file:_files'
+          ;;
+        dashboard)
+          _arguments '--addr[listen address]:address:' '--host-suffix[optional host-based routing suffix]:suffix:' '--https[print HTTPS URLs for TLS-enabled local proxy setups]' '--timeout[health check timeout]:duration:' '--store[path to routes store]:file:_files'
           ;;
         import)
           _arguments '1:source:(devport-radar docker-ps docker-compose-ps)' '--file[path to import JSON]:file:_files' '--replace[replace existing routes instead of merging]' '--store[path to routes store]:file:_files'
@@ -601,6 +625,7 @@ complete -c looplane -n '__fish_use_subcommand' -f -a 'import' -d 'Import routes
 complete -c looplane -n '__fish_use_subcommand' -f -a 'ls' -d 'List routes'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'serve' -d 'Start reverse proxy'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'open' -d 'Print stable route URL'
+complete -c looplane -n '__fish_use_subcommand' -f -a 'dashboard' -d 'Show route dashboard'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'completion' -d 'Print shell completion script'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'help' -d 'Show help'
 
@@ -608,12 +633,13 @@ complete -c looplane -n '__fish_seen_subcommand_from import' -f -a 'devport-rada
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l check -d 'Probe upstream health for each route'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l json -d 'Emit routes as JSON'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l timeout -d 'Health check timeout' -r
-complete -c looplane -n '__fish_seen_subcommand_from ls import serve open rm' -l store -d 'Path to routes store' -r
-complete -c looplane -n '__fish_seen_subcommand_from serve open' -l addr -d 'Listen/proxy address' -r
-complete -c looplane -n '__fish_seen_subcommand_from serve open' -l host-suffix -d 'Optional host-based routing suffix'
+complete -c looplane -n '__fish_seen_subcommand_from ls import serve open rm dashboard' -l store -d 'Path to routes store' -r
+complete -c looplane -n '__fish_seen_subcommand_from serve open dashboard' -l addr -d 'Listen/proxy address' -r
+complete -c looplane -n '__fish_seen_subcommand_from serve open dashboard' -l host-suffix -d 'Optional host-based routing suffix'
 complete -c looplane -n '__fish_seen_subcommand_from serve' -l tls-cert -d 'Path to TLS certificate' -r
 complete -c looplane -n '__fish_seen_subcommand_from serve' -l tls-key -d 'Path to TLS private key' -r
-complete -c looplane -n '__fish_seen_subcommand_from open' -l https -d 'Print an HTTPS URL'
+complete -c looplane -n '__fish_seen_subcommand_from open dashboard' -l https -d 'Print an HTTPS URL'
+complete -c looplane -n '__fish_seen_subcommand_from dashboard' -l timeout -d 'Health check timeout' -r
 complete -c looplane -n '__fish_seen_subcommand_from serve' -l watch -d 'Reload routes from the selected store on each request'
 complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to import JSON' -r
 complete -c looplane -n '__fish_seen_subcommand_from import' -l replace -d 'Replace existing routes instead of merging'
@@ -624,7 +650,7 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane _
 		return `Register-ArgumentCompleter -Native -CommandName looplane -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
 
-    $commands = 'add', 'rm', 'import', 'ls', 'serve', 'open', 'completion', 'help'
+    $commands = 'add', 'rm', 'import', 'ls', 'serve', 'open', 'dashboard', 'completion', 'help'
     $shells = 'bash', 'zsh', 'fish', 'powershell'
     $routeNames = @()
 
@@ -673,6 +699,11 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane _
         }
         'open' {
             @('--addr', '--host-suffix', '--https', '--store') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        }
+        'dashboard' {
+            @('--addr', '--host-suffix', '--https', '--timeout', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }

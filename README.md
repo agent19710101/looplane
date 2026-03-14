@@ -50,6 +50,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Optional health checks with `looplane ls --check` (2xx/3xx healthy, 4xx/5xx surfaced as errors)
 - Remove routes with `looplane rm`
 - Print stable route URLs with `looplane open NAME`
+- Scan route health, stable URLs, and next-step commands with `looplane dashboard`
 - Generate shell completions with `looplane completion [bash|zsh|fish|powershell]`
 - Store-backed route-name completion for `looplane open` and `looplane rm`
 - Optional shared route config via `--store PATH` across route and serve commands
@@ -100,6 +101,7 @@ looplane ls --check
 looplane ls --json
 looplane open api
 looplane open api --host-suffix localtest.me
+looplane dashboard --host-suffix localtest.me
 looplane serve --addr 127.0.0.1:7777
 looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me
 ```
@@ -149,6 +151,23 @@ curl http://127.0.0.1:7777/
 curl http://127.0.0.1:7777/api/healthz
 curl http://127.0.0.1:7777/docs/
 ```
+
+### Dashboard
+
+When you want a compact human view instead of raw `ls` output, run:
+
+```bash
+looplane dashboard
+looplane dashboard --host-suffix localtest.me
+```
+
+It prints one screen with:
+
+- current route health
+- stable URLs to open or share
+- obvious next commands for rechecking, opening a route, importing fresh snapshots, or starting the proxy
+
+The dashboard stays dependency-free and intentionally small: it builds on the same store, health probes, and `open`/`serve` flows instead of introducing a separate app model.
 
 ### Host-based routing
 
@@ -228,11 +247,11 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix` (for DNS-safe route names), forwarded `X-Forwarded-Host`/`X-Forwarded-Proto`/`X-Forwarded-Prefix` headers for upstream canonical URL correctness, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions now keeps formatting and `go vet` on Ubuntu while running `go test ./...` across Ubuntu, Windows, and macOS for pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, a dependency-free dashboard for humans, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix` (for DNS-safe route names), forwarded `X-Forwarded-Host`/`X-Forwarded-Proto`/`X-Forwarded-Prefix` headers for upstream canonical URL correctness, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions now keeps formatting and `go vet` on Ubuntu while running `go test ./...` across Ubuntu, Windows, and macOS for pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
-- #10: add a minimal terminal dashboard for route health and quick actions
+- consider clipboard/open integration for the dashboard once the small dependency-free command set settles
 - consider a Kubernetes-friendly import path after the current proxy/correctness issues are closed
 - consider lightweight dev-cert generation helpers on top of the existing `--tls-cert` / `--tls-key` flow
 
@@ -244,10 +263,15 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 - kept formatting and `go vet` on Ubuntu only so the release pipeline stays clear without duplicating lint-style work on every OS
 - applies the same split to pushes, pull requests, tags, and published releases so PowerShell/completion regressions are caught before cutting a version
 
-### v0.13.x — operator UX
+### v0.13.0 — terminal dashboard
 
-- follow with issue #10’s additive terminal dashboard for route health, stable URLs, and quick follow-up actions
-- keep the dashboard intentionally small and dependency-light so the core CLI stays script-friendly
+- added `looplane dashboard` for a compact operator view with route health, target URLs, stable URLs, and the most useful next commands in one place
+- kept the first cut dependency-free and built directly on the existing route store, health probes, and `open`/`serve` flows
+- gracefully falls back to path-based stable URLs when a route name is valid for path routing but not DNS-safe for host-based routing
+
+### Next
+
+- consider clipboard/open integration for dashboard quick actions without bloating the core binary
 
 ## Development
 
