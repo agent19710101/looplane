@@ -197,6 +197,16 @@ func run(args []string) error {
 		}
 		fmt.Printf("http://%s/%s/\n", strings.TrimSuffix(*addr, "/"), routeName)
 		return nil
+	case "completion":
+		if len(args) != 2 {
+			return errors.New("usage: looplane completion [bash|zsh|fish|powershell]")
+		}
+		script, err := completionScript(args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Print(script)
+		return nil
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -220,6 +230,7 @@ Usage:
   looplane ls [--check] [--json] [--timeout D] List routes (optionally probe health)
   looplane serve [--addr A]                    Start reverse proxy (default 127.0.0.1:7777)
   looplane open NAME [--addr A]                Print the stable URL for a configured route
+  looplane completion SHELL                    Print a shell completion script
 
 Examples:
   looplane add api http://127.0.0.1:3000
@@ -230,6 +241,190 @@ Examples:
   looplane ls --json
   looplane open api
   looplane serve --addr 127.0.0.1:7777
+  looplane completion bash > ~/.local/share/bash-completion/completions/looplane
   curl http://127.0.0.1:7777/api/healthz
 `)
+}
+
+func completionScript(shell string) (string, error) {
+	switch shell {
+	case "bash":
+		return `# bash completion for looplane
+_looplane() {
+    local cur prev words cword
+    _init_completion || return
+
+    local commands="add rm import ls serve open completion help"
+
+    case "${prev}" in
+        import)
+            COMPREPLY=( $(compgen -W "devport-radar" -- "$cur") )
+            return
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "bash zsh fish powershell" -- "$cur") )
+            return
+            ;;
+        open|rm)
+            local routes
+            routes=$(looplane ls --json 2>/dev/null | sed -n 's/.*"name": "\([^"]*\)".*/\1/p')
+            COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
+            return
+            ;;
+    esac
+
+    if [[ "$cword" -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+        return
+    fi
+
+    case "${words[1]}" in
+        ls)
+            COMPREPLY=( $(compgen -W "--check --json --timeout" -- "$cur") )
+            ;;
+        serve)
+            COMPREPLY=( $(compgen -W "--addr" -- "$cur") )
+            ;;
+        open)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--addr" -- "$cur") )
+                return
+            fi
+            local routes
+            routes=$(looplane ls --json 2>/dev/null | sed -n 's/.*"name": "\([^"]*\)".*/\1/p')
+            COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
+            ;;
+        import)
+            COMPREPLY=( $(compgen -W "devport-radar --file --replace" -- "$cur") )
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "bash zsh fish powershell" -- "$cur") )
+            ;;
+    esac
+}
+
+complete -F _looplane looplane
+`, nil
+	case "zsh":
+		return `#compdef looplane
+
+_looplane_routes() {
+  local -a routes
+  routes=(${(f)"$(looplane ls --json 2>/dev/null | sed -n 's/.*"name": "\([^"]*\)".*/\1/p')"})
+  _describe 'route' routes
+}
+
+_looplane() {
+  local context state line
+  typeset -A opt_args
+
+  _arguments -C \
+    '1:command:((add:"Add or update a route" rm:"Remove a route" import:"Import routes" ls:"List routes" serve:"Start proxy" open:"Print stable URL" completion:"Print completions" help:"Show help"))' \
+    '*::arg:->args'
+
+  case $state in
+    args)
+      case $words[2] in
+        rm|open)
+          _looplane_routes
+          ;;
+        import)
+          _arguments '1:source:(devport-radar)' '--file[path to devport-radar JSON]:file:_files' '--replace[replace existing routes instead of merging]'
+          ;;
+        ls)
+          _arguments '--check[probe upstream health for each route]' '--json[emit routes as JSON]' '--timeout[health check timeout]:duration:'
+          ;;
+        serve)
+          _arguments '--addr[listen address]:address:'
+          ;;
+        completion)
+          _arguments '1:shell:(bash zsh fish powershell)'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_looplane "$@"
+`, nil
+	case "fish":
+		return `complete -c looplane -n '__fish_use_subcommand' -f -a 'add' -d 'Add or update a named upstream route'
+complete -c looplane -n '__fish_use_subcommand' -f -a 'rm' -d 'Remove a route'
+complete -c looplane -n '__fish_use_subcommand' -f -a 'import' -d 'Import routes from devport-radar JSON'
+complete -c looplane -n '__fish_use_subcommand' -f -a 'ls' -d 'List routes'
+complete -c looplane -n '__fish_use_subcommand' -f -a 'serve' -d 'Start reverse proxy'
+complete -c looplane -n '__fish_use_subcommand' -f -a 'open' -d 'Print stable route URL'
+complete -c looplane -n '__fish_use_subcommand' -f -a 'completion' -d 'Print shell completion script'
+complete -c looplane -n '__fish_use_subcommand' -f -a 'help' -d 'Show help'
+
+complete -c looplane -n '__fish_seen_subcommand_from import' -f -a 'devport-radar'
+complete -c looplane -n '__fish_seen_subcommand_from ls' -l check -d 'Probe upstream health for each route'
+complete -c looplane -n '__fish_seen_subcommand_from ls' -l json -d 'Emit routes as JSON'
+complete -c looplane -n '__fish_seen_subcommand_from ls' -l timeout -d 'Health check timeout' -r
+complete -c looplane -n '__fish_seen_subcommand_from serve open' -l addr -d 'Listen/proxy address' -r
+complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to devport-radar JSON' -r
+complete -c looplane -n '__fish_seen_subcommand_from import' -l replace -d 'Replace existing routes instead of merging'
+complete -c looplane -n '__fish_seen_subcommand_from completion' -f -a 'bash zsh fish powershell'
+complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane ls --json 2>/dev/null | string match -r ''"name": "([^"]+)"'' | string replace -r ''"name": "([^"]+)"'' ''$1'')'
+`, nil
+	case "powershell":
+		return `Register-ArgumentCompleter -Native -CommandName looplane -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+
+    $commands = 'add', 'rm', 'import', 'ls', 'serve', 'open', 'completion', 'help'
+    $shells = 'bash', 'zsh', 'fish', 'powershell'
+    $routeNames = @()
+
+    try {
+        $routes = looplane ls --json 2>$null | ConvertFrom-Json
+        if ($routes) {
+            $routeNames = @($routes | ForEach-Object { $_.name })
+        }
+    } catch {}
+
+    $tokens = $commandAst.CommandElements | ForEach-Object { $_.Extent.Text }
+    if ($tokens.Count -le 1) {
+        $commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+
+    switch ($tokens[1]) {
+        'import' {
+            @('devport-radar', '--file', '--replace') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        }
+        'ls' {
+            @('--check', '--json', '--timeout') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        }
+        'serve' {
+            @('--addr') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        }
+        'open' {
+            @('--addr') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        }
+        'rm' {
+            $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        }
+        'completion' {
+            $shells | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+        }
+    }
+}
+`, nil
+	default:
+		return "", fmt.Errorf("unsupported shell %q (use bash, zsh, fish, or powershell)", shell)
+	}
 }

@@ -106,6 +106,39 @@ func TestRunLSJSON(t *testing.T) {
 	}
 }
 
+func TestRunCompletionBash(t *testing.T) {
+	stdout, stderr, err := captureRunOutput([]string{"completion", "bash"})
+	if err != nil {
+		t.Fatalf("completion bash: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "complete -F _looplane looplane") {
+		t.Fatalf("unexpected bash completion output: %s", stdout)
+	}
+	if !strings.Contains(stdout, "devport-radar") {
+		t.Fatalf("bash completion missing import source: %s", stdout)
+	}
+}
+
+func TestRunCompletionFish(t *testing.T) {
+	stdout, stderr, err := captureRunOutput([]string{"completion", "fish"})
+	if err != nil {
+		t.Fatalf("completion fish: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "complete -c looplane") {
+		t.Fatalf("unexpected fish completion output: %s", stdout)
+	}
+	if !strings.Contains(stdout, "__fish_seen_subcommand_from completion") {
+		t.Fatalf("fish completion missing shell completion entries: %s", stdout)
+	}
+}
+
+func TestRunCompletionRejectsUnsupportedShell(t *testing.T) {
+	_, _, err := captureRunOutput([]string{"completion", "nushell"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported shell") {
+		t.Fatalf("expected unsupported shell error, got %v", err)
+	}
+}
+
 func captureRunOutput(args []string) (string, string, error) {
 	oldStdout := os.Stdout
 	oldStderr := os.Stderr

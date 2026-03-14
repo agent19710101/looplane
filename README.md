@@ -49,6 +49,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Optional health checks with `looplane ls --check`
 - Remove routes with `looplane rm`
 - Print stable route URLs with `looplane open NAME`
+- Generate shell completions with `looplane completion [bash|zsh|fish|powershell]`
 - Start a local reverse proxy with `looplane serve`
 - Path-prefix routing (`/api/...`, `/docs/...`)
 - Upstream path preservation (`http://target/base` + `/docs/page` => `/base/page`)
@@ -59,6 +60,20 @@ What is still oddly manual is the last mile: **giving those local services stabl
 
 ```bash
 go install github.com/agent19710101/looplane/cmd/looplane@latest
+```
+
+### Shell completions
+
+```bash
+looplane completion bash > ~/.local/share/bash-completion/completions/looplane
+looplane completion zsh > "${fpath[1]}/_looplane"
+looplane completion fish > ~/.config/fish/completions/looplane.fish
+```
+
+PowerShell:
+
+```powershell
+looplane completion powershell | Out-String | Invoke-Expression
 ```
 
 ## Quickstart
@@ -108,13 +123,13 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, and `devport-radar` snapshot import are already in place.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, and generated shell completions are already in place.
 
 ## Roadmap
 
 - optional file-watch mode for shared team route config
 - import from additional local scanners beyond `devport-radar`
-- shell completions
+- smarter route-name completion sourced directly from config/store
 - TUI dashboard for route health + quick switching
 - optional host-based routing (`api.localtest.me` style)
 
