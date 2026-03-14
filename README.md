@@ -55,6 +55,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Optional shared route config via `--store PATH` across route and serve commands
 - Start a local reverse proxy with `looplane serve`
 - Optional host-based routing with `looplane serve --host-suffix localtest.me` for DNS-safe route names
+- Forwarded host/proto/prefix headers so upstream apps see stable canonical URLs behind looplane
 - Optional local HTTPS termination with `looplane serve --tls-cert ... --tls-key ...`
 - Live-reload served routes when the selected store changes
 - Path-prefix routing (`/api/...`, `/docs/...`)
@@ -163,6 +164,16 @@ With host-based routing enabled, requests for `api.localtest.me:7777` go straigh
 
 Host-based routing intentionally uses a stricter route-name contract than path-based routing: the route name must already be DNS-safe (`a-z`, `0-9`, and `-`, with no leading/trailing `-`). Names with underscores still work for path-based URLs like `/api_v2/`, but `looplane open --host-suffix ...` and `looplane serve --host-suffix ...` now reject them instead of printing or serving misleading hostnames.
 
+### Forwarded headers for canonical URLs
+
+When `looplane` proxies a request, it now forwards the original routing context that many upstream web apps use for redirects and absolute URL generation:
+
+- `X-Forwarded-Host`: the original `Host` header seen by `looplane`
+- `X-Forwarded-Proto`: `http` or `https`, depending on how the client reached `looplane`
+- `X-Forwarded-Prefix`: the stable path prefix (for example `/api`) in path-based mode
+
+That means apps behind `/api/`, host-based routing, or local TLS termination can generate canonical links, callback URLs, and redirects that match the URL the user actually visited instead of the raw upstream target.
+
 ### Local HTTPS for host-based routing
 
 For browser flows that behave differently without TLS, `looplane` can terminate HTTPS locally when you already have a development certificate and key:
@@ -217,11 +228,10 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix` (for DNS-safe route names), optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix` (for DNS-safe route names), forwarded `X-Forwarded-Host`/`X-Forwarded-Proto`/`X-Forwarded-Prefix` headers for upstream canonical URL correctness, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
-- #12: forward host/proto headers so upstream apps generate correct canonical URLs behind looplane
 - #13: run CI tests in a cross-platform matrix before release
 - #10: add a minimal terminal dashboard for route health and quick actions
 - consider a Kubernetes-friendly import path after the current proxy/correctness issues are closed
@@ -235,6 +245,12 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 - `looplane open --https --host-suffix ...` prints stable HTTPS route URLs for TLS-enabled local proxy setups
 - documented an `mkcert`-friendly workflow instead of adding heavy built-in cert management
 - added regression coverage for HTTPS URL printing, TLS index output, completion flags, and invalid half-config rejection
+
+### v0.12.0 — forwarded canonical URL headers
+
+- `looplane serve` now forwards `X-Forwarded-Host` and `X-Forwarded-Proto` so upstream apps can generate correct absolute URLs, redirects, and callback targets
+- path-based proxying keeps forwarding `X-Forwarded-Prefix`, while host-based and TLS-backed flows now get the matching host/proto context too
+- added regression coverage for path-based HTTP and host-based HTTPS forwarded-header behavior
 
 ### v0.11.1 — host-routing contract cleanup
 

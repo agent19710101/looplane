@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/tls"
 	"errors"
 	"io"
 	"net/http"
@@ -123,6 +124,8 @@ func TestServerHandlerRoutesByPrefix(t *testing.T) {
 	var seenQuery string
 	var seenPrefix string
 	var seenHost string
+	var seenForwardedHost string
+	var seenForwardedProto string
 
 	server := &Server{
 		Addr:   "127.0.0.1:7777",
@@ -132,11 +135,14 @@ func TestServerHandlerRoutesByPrefix(t *testing.T) {
 			seenQuery = req.URL.RawQuery
 			seenPrefix = req.Header.Get("X-Forwarded-Prefix")
 			seenHost = req.Host
+			seenForwardedHost = req.Header.Get("X-Forwarded-Host")
+			seenForwardedProto = req.Header.Get("X-Forwarded-Proto")
 			return response(req, http.StatusOK, req.URL.Path+"?"+req.URL.RawQuery+"|"+seenPrefix), nil
 		}),
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/users?id=42", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7777/api/users?id=42", nil)
+	req.Host = "devbox.local:7777"
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
 
@@ -149,6 +155,9 @@ func TestServerHandlerRoutesByPrefix(t *testing.T) {
 	}
 	if seenPath != "/base/users" || seenQuery != "id=42" || seenPrefix != "/api" || seenHost != "upstream.test" {
 		t.Fatalf("unexpected proxy request: path=%q query=%q prefix=%q host=%q", seenPath, seenQuery, seenPrefix, seenHost)
+	}
+	if seenForwardedHost != "devbox.local:7777" || seenForwardedProto != "http" {
+		t.Fatalf("unexpected forwarded headers: host=%q proto=%q", seenForwardedHost, seenForwardedProto)
 	}
 }
 
@@ -250,21 +259,28 @@ func TestServerHandlerRoutesByHostSuffix(t *testing.T) {
 	var seenPath string
 	var seenPrefix string
 	var seenRoute string
+	var seenForwardedHost string
+	var seenForwardedProto string
 
 	server := &Server{
 		Addr:       "127.0.0.1:7777",
 		HostSuffix: "localtest.me",
+		TLSCert:    "./cert.pem",
+		TLSKey:     "./key.pem",
 		Routes:     []Route{{Name: "api", URL: "http://upstream.test/base"}},
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			seenPath = req.URL.Path
 			seenPrefix = req.Header.Get("X-Forwarded-Prefix")
 			seenRoute = req.Header.Get("X-Looplane-Route")
+			seenForwardedHost = req.Header.Get("X-Forwarded-Host")
+			seenForwardedProto = req.Header.Get("X-Forwarded-Proto")
 			return response(req, http.StatusOK, req.URL.Path+"|"+seenPrefix+"|"+seenRoute), nil
 		}),
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "http://api.localtest.me:7777/users?id=42", nil)
+	req := httptest.NewRequest(http.MethodGet, "https://api.localtest.me:7777/users?id=42", nil)
 	req.Host = "api.localtest.me:7777"
+	req.TLS = &tls.ConnectionState{}
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
 
@@ -276,6 +292,9 @@ func TestServerHandlerRoutesByHostSuffix(t *testing.T) {
 	}
 	if seenPath != "/base/users" || seenPrefix != "" || seenRoute != "api" {
 		t.Fatalf("unexpected host-routed request: path=%q prefix=%q route=%q", seenPath, seenPrefix, seenRoute)
+	}
+	if seenForwardedHost != "api.localtest.me:7777" || seenForwardedProto != "https" {
+		t.Fatalf("unexpected forwarded headers: host=%q proto=%q", seenForwardedHost, seenForwardedProto)
 	}
 }
 

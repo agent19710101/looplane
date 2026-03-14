@@ -343,6 +343,8 @@ func (s *Server) Handler() http.Handler {
 			if prefix != "" {
 				req.Header.Set("X-Forwarded-Prefix", prefix)
 			}
+			req.Header.Set("X-Forwarded-Host", forwardedHost(r))
+			req.Header.Set("X-Forwarded-Proto", forwardedProto(r))
 			req.Header.Set("X-Looplane-Route", route.Name)
 		}
 		proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
@@ -423,6 +425,32 @@ func stripPort(hostport string) string {
 		return strings.ToLower(h)
 	}
 	return strings.ToLower(hostport)
+}
+
+func forwardedHost(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if r.Host != "" {
+		return r.Host
+	}
+	if r.URL != nil {
+		return r.URL.Host
+	}
+	return ""
+}
+
+func forwardedProto(r *http.Request) string {
+	if r == nil {
+		return "http"
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	if r.URL != nil && strings.EqualFold(r.URL.Scheme, "https") {
+		return "https"
+	}
+	return "http"
 }
 
 func serverScheme(certPath string, keyPath string) string {
