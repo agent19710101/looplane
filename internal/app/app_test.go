@@ -79,6 +79,26 @@ func TestCheckRoutesFallsBackToGetWhenHeadNotAllowed(t *testing.T) {
 	}
 }
 
+func TestCheckRoutesReports4xxAsError(t *testing.T) {
+	withHTTPClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return response(req, http.StatusNotFound, ""), nil
+	}))
+
+	statuses := CheckRoutes([]Route{{Name: "docs", URL: "http://docs.test"}}, time.Second)
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if statuses[0].OK {
+		t.Fatalf("expected unhealthy status: %#v", statuses[0])
+	}
+	if statuses[0].StatusCode != http.StatusNotFound {
+		t.Fatalf("unexpected status code: %#v", statuses[0])
+	}
+	if statuses[0].Message != "error (404)" {
+		t.Fatalf("unexpected message: %q", statuses[0].Message)
+	}
+}
+
 func TestCheckRoutesReportsUnreachableTarget(t *testing.T) {
 	withHTTPClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return nil, errors.New("dial tcp 127.0.0.1:1: connect: connection refused")

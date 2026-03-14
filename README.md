@@ -46,7 +46,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - List routes with `looplane ls`
 - JSON output for scripts and agents with `looplane ls --json`
 - Import routes from `devport-radar --json`
-- Optional health checks with `looplane ls --check`
+- Optional health checks with `looplane ls --check` (2xx/3xx healthy, 4xx/5xx surfaced as errors)
 - Remove routes with `looplane rm`
 - Print stable route URLs with `looplane open NAME`
 - Generate shell completions with `looplane completion [bash|zsh|fish|powershell]`
@@ -106,7 +106,7 @@ curl http://127.0.0.1:7777/docs/
 $ looplane ls --check
 NAME  TARGET                         STATUS
 api   http://127.0.0.1:3000          ok (200)
-docs  http://127.0.0.1:4321/base     ok (200)
+docs  http://127.0.0.1:4321/base     error (404)
 
 $ looplane ls --json
 [

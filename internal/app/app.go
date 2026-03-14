@@ -210,10 +210,10 @@ func probeRoute(client *http.Client, method string, rawURL string) (int, error) 
 	if resp.StatusCode == http.StatusMethodNotAllowed {
 		return resp.StatusCode, fmt.Errorf("upstream returned %s", resp.Status)
 	}
-	if resp.StatusCode < 500 {
-		return resp.StatusCode, nil
+	if resp.StatusCode >= 400 {
+		return resp.StatusCode, fmt.Errorf("upstream returned %s", resp.Status)
 	}
-	return resp.StatusCode, fmt.Errorf("upstream returned %s", resp.Status)
+	return resp.StatusCode, nil
 }
 
 type Server struct {
