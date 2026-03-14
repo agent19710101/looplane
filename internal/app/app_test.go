@@ -270,6 +270,16 @@ func TestIndexIncludesHostBasedURLs(t *testing.T) {
 	}
 }
 
+func TestIndexIncludesHTTPSHostBasedURLsWhenTLSConfigured(t *testing.T) {
+	server := &Server{Addr: "127.0.0.1:7777", HostSuffix: "localtest.me", TLSCert: "./cert.pem", TLSKey: "./key.pem", Routes: []Route{{Name: "web", URL: "http://127.0.0.1:3000"}}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "https://web.localtest.me:7777/ -> http://127.0.0.1:3000") {
+		t.Fatalf("index missing https host-based route: %q", rec.Body.String())
+	}
+}
+
 func TestStoreSaveWritesAtomically(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "team", "routes.json")
 	store := NewStore(storePath)

@@ -227,7 +227,7 @@ func TestRunCompletionZsh(t *testing.T) {
 	if !strings.Contains(stdout, "store_args=(${reply[@]})") {
 		t.Fatalf("zsh completion missing shared-store route completion: %s", stdout)
 	}
-	if !strings.Contains(stdout, "rm|open") {
+	if !strings.Contains(stdout, "rm)") || !strings.Contains(stdout, "open)") {
 		t.Fatalf("zsh completion missing route-aware rm/open handling: %s", stdout)
 	}
 }
@@ -398,36 +398,61 @@ func TestRunOpenSupportsHostSuffix(t *testing.T) {
 	}
 }
 
+func TestRunOpenSupportsHTTPS(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	if err := run([]string{"add", "api", "http://127.0.0.1:3000"}); err != nil {
+		t.Fatalf("add route: %v", err)
+	}
+
+	stdout, stderr, err := captureRunOutput([]string{"open", "api", "--host-suffix", "localtest.me", "--https"})
+	if err != nil {
+		t.Fatalf("open route with https: %v\nstderr=%s", err, stderr)
+	}
+	if got := strings.TrimSpace(stdout); got != "https://api.localtest.me:7777/" {
+		t.Fatalf("unexpected https open output: %q", got)
+	}
+}
+
+func TestRunServeRejectsHalfTLSConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	_, _, err := captureRunOutput([]string{"serve", "--tls-cert", "./cert.pem"})
+	if err == nil || !strings.Contains(err.Error(), "serve requires both --tls-cert and --tls-key together") {
+		t.Fatalf("expected TLS pair error, got %v", err)
+	}
+}
+
 func TestRunCompletionIncludesHostSuffixFlags(t *testing.T) {
 	stdout, stderr, err := captureRunOutput([]string{"completion", "bash"})
 	if err != nil {
 		t.Fatalf("completion bash: %v\nstderr=%s", err, stderr)
 	}
-	if !strings.Contains(stdout, "--addr --host-suffix --watch --store") || !strings.Contains(stdout, "--addr --host-suffix --store") {
-		t.Fatalf("bash completion missing host-suffix flags: %s", stdout)
+	if !strings.Contains(stdout, "--addr --host-suffix --tls-cert --tls-key --watch --store") || !strings.Contains(stdout, "--addr --host-suffix --https --store") {
+		t.Fatalf("bash completion missing HTTPS/TLS flags: %s", stdout)
 	}
 
 	stdout, stderr, err = captureRunOutput([]string{"completion", "zsh"})
 	if err != nil {
 		t.Fatalf("completion zsh: %v\nstderr=%s", err, stderr)
 	}
-	if !strings.Contains(stdout, "--host-suffix[optional host-based routing suffix]") {
-		t.Fatalf("zsh completion missing host-suffix flag: %s", stdout)
+	if !strings.Contains(stdout, "--host-suffix[optional host-based routing suffix]") || !strings.Contains(stdout, "--tls-cert[path to TLS certificate]") || !strings.Contains(stdout, "--https[print an HTTPS URL for TLS-enabled local proxy setups]") {
+		t.Fatalf("zsh completion missing HTTPS/TLS flags: %s", stdout)
 	}
 
 	stdout, stderr, err = captureRunOutput([]string{"completion", "fish"})
 	if err != nil {
 		t.Fatalf("completion fish: %v\nstderr=%s", err, stderr)
 	}
-	if !strings.Contains(stdout, "-l host-suffix") {
-		t.Fatalf("fish completion missing host-suffix flag: %s", stdout)
+	if !strings.Contains(stdout, "-l host-suffix") || !strings.Contains(stdout, "-l tls-cert") || !strings.Contains(stdout, "-l tls-key") || !strings.Contains(stdout, "-l https") {
+		t.Fatalf("fish completion missing HTTPS/TLS flags: %s", stdout)
 	}
 
 	stdout, stderr, err = captureRunOutput([]string{"completion", "powershell"})
 	if err != nil {
 		t.Fatalf("completion powershell: %v\nstderr=%s", err, stderr)
 	}
-	if !strings.Contains(stdout, "'--host-suffix'") {
-		t.Fatalf("powershell completion missing host-suffix flag: %s", stdout)
+	if !strings.Contains(stdout, "'--host-suffix'") || !strings.Contains(stdout, "'--tls-cert'") || !strings.Contains(stdout, "'--tls-key'") || !strings.Contains(stdout, "'--https'") {
+		t.Fatalf("powershell completion missing HTTPS/TLS flags: %s", stdout)
 	}
 }

@@ -255,6 +255,8 @@ func probeRoute(client *http.Client, method string, rawURL string) (int, error) 
 type Server struct {
 	Addr       string
 	HostSuffix string
+	TLSCert    string
+	TLSKey     string
 	Routes     []Route
 	LoadRoutes func() ([]Route, error)
 	Stdout     io.Writer
@@ -288,7 +290,7 @@ func (s *Server) Handler() http.Handler {
 		route, routePath, prefix, ok := s.resolveRoute(routes, r)
 		if !ok {
 			if r.URL.Path == "/" {
-				writeIndex(w, s.Addr, s.HostSuffix, routes)
+				writeIndex(w, s.Addr, s.HostSuffix, s.TLSCert, s.TLSKey, routes)
 				return
 			}
 			http.NotFound(w, r)
@@ -362,18 +364,19 @@ func (s *Server) resolveRouteByHost(routes []Route, host string) (Route, bool) {
 	return FindRoute(routes, name)
 }
 
-func writeIndex(w http.ResponseWriter, addr string, hostSuffix string, routes []Route) {
+func writeIndex(w http.ResponseWriter, addr string, hostSuffix string, certPath string, keyPath string, routes []Route) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = fmt.Fprintf(w, "looplane proxy on %s\n\n", addr)
 	if len(routes) == 0 {
 		_, _ = io.WriteString(w, "No routes yet. Add one with: looplane add NAME http://127.0.0.1:PORT\n")
 		return
 	}
+	scheme := serverScheme(certPath, keyPath)
 	_, _ = io.WriteString(w, "Routes:\n")
 	for _, route := range routes {
 		_, _ = fmt.Fprintf(w, "- /%s/ -> %s\n", route.Name, route.URL)
 		if hostSuffix != "" {
-			_, _ = fmt.Fprintf(w, "- http://%s.%s%s/ -> %s\n", route.Name, hostSuffix, addrPortSuffix(addr), route.URL)
+			_, _ = fmt.Fprintf(w, "- %s://%s.%s%s/ -> %s\n", scheme, route.Name, hostSuffix, addrPortSuffix(addr), route.URL)
 		}
 	}
 }
@@ -395,6 +398,13 @@ func stripPort(hostport string) string {
 		return strings.ToLower(h)
 	}
 	return strings.ToLower(hostport)
+}
+
+func serverScheme(certPath string, keyPath string) string {
+	if strings.TrimSpace(certPath) != "" && strings.TrimSpace(keyPath) != "" {
+		return "https"
+	}
+	return "http"
 }
 
 func addrPortSuffix(addr string) string {

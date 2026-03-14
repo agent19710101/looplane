@@ -161,30 +161,46 @@ func run(args []string) error {
 		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 		addr := fs.String("addr", "127.0.0.1:7777", "listen address")
 		hostSuffix := fs.String("host-suffix", "", "optional host-based routing suffix (for example localtest.me)")
+		tlsCert := fs.String("tls-cert", "", "optional TLS certificate path for local HTTPS")
+		tlsKey := fs.String("tls-key", "", "optional TLS private key path for local HTTPS")
 		watch := fs.Bool("watch", true, "reload routes from the selected store on each request")
 		if err := fs.Parse(commandArgs); err != nil {
 			return err
+		}
+		if (strings.TrimSpace(*tlsCert) == "") != (strings.TrimSpace(*tlsKey) == "") {
+			return errors.New("serve requires both --tls-cert and --tls-key together")
 		}
 		routes, err := store.Load()
 		if err != nil {
 			return err
 		}
-		srv := &app.Server{Addr: *addr, HostSuffix: strings.TrimPrefix(strings.ToLower(strings.TrimSpace(*hostSuffix)), "."), Routes: routes, Stdout: os.Stdout}
+		srv := &app.Server{
+			Addr:       *addr,
+			HostSuffix: strings.TrimPrefix(strings.ToLower(strings.TrimSpace(*hostSuffix)), "."),
+			TLSCert:    strings.TrimSpace(*tlsCert),
+			TLSKey:     strings.TrimSpace(*tlsKey),
+			Routes:     routes,
+			Stdout:     os.Stdout,
+		}
 		if *watch {
 			srv.LoadRoutes = store.Load
 		}
-		fmt.Printf("looplane listening on http://%s\n", *addr)
+		scheme := routeScheme(*tlsCert, *tlsKey, false)
+		fmt.Printf("looplane listening on %s://%s\n", scheme, *addr)
 		if len(routes) == 0 {
 			fmt.Println("tip: add routes with `looplane add NAME http://127.0.0.1:PORT`")
 		} else {
 			for _, route := range routes {
-				fmt.Printf("- http://%s/%s/ -> %s\n", *addr, route.Name, route.URL)
+				fmt.Printf("- %s://%s/%s/ -> %s\n", scheme, *addr, route.Name, route.URL)
 				if srv.HostSuffix != "" {
-					if hostURL, err := hostRouteURL(*addr, route.Name, srv.HostSuffix); err == nil {
+					if hostURL, err := hostRouteURL(*addr, route.Name, srv.HostSuffix, scheme); err == nil {
 						fmt.Printf("- %s -> %s\n", hostURL, route.URL)
 					}
 				}
 			}
+		}
+		if strings.TrimSpace(*tlsCert) != "" {
+			return http.ListenAndServeTLS(*addr, *tlsCert, *tlsKey, srv.Handler())
 		}
 		return http.ListenAndServe(*addr, srv.Handler())
 	case "open":
@@ -197,6 +213,7 @@ func run(args []string) error {
 		fs := flag.NewFlagSet("open", flag.ContinueOnError)
 		addr := fs.String("addr", "127.0.0.1:7777", "looplane proxy address")
 		hostSuffix := fs.String("host-suffix", "", "optional host-based routing suffix (for example localtest.me)")
+		https := fs.Bool("https", false, "print an HTTPS URL for TLS-enabled local proxy setups")
 		if err := fs.Parse(openArgs); err != nil {
 			return err
 		}
@@ -215,16 +232,17 @@ func run(args []string) error {
 		if _, ok := app.FindRoute(routes, routeName); !ok {
 			return fmt.Errorf("route %s not found", routeName)
 		}
+		scheme := routeScheme("", "", *https)
 		normalizedHostSuffix := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(*hostSuffix)), ".")
 		if normalizedHostSuffix != "" {
-			url, err := hostRouteURL(*addr, routeName, normalizedHostSuffix)
+			url, err := hostRouteURL(*addr, routeName, normalizedHostSuffix, scheme)
 			if err != nil {
 				return err
 			}
 			fmt.Println(url)
 			return nil
 		}
-		fmt.Printf("http://%s/%s/\n", strings.TrimSuffix(*addr, "/"), routeName)
+		fmt.Printf("%s://%s/%s/\n", scheme, strings.TrimSuffix(*addr, "/"), routeName)
 		return nil
 	case "completion":
 		if len(commandArgs) != 1 {
@@ -284,7 +302,14 @@ func resolveCommandStore(args []string) (string, string, []string, error) {
 	return command, storePath, commandArgs, nil
 }
 
-func hostRouteURL(addr string, routeName string, hostSuffix string) (string, error) {
+func routeScheme(certPath string, keyPath string, https bool) string {
+	if https || (strings.TrimSpace(certPath) != "" && strings.TrimSpace(keyPath) != "") {
+		return "https"
+	}
+	return "http"
+}
+
+func hostRouteURL(addr string, routeName string, hostSuffix string, scheme string) (string, error) {
 	hostSuffix = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(hostSuffix)), ".")
 	if hostSuffix == "" {
 		return "", errors.New("host suffix is required")
@@ -298,11 +323,11 @@ func hostRouteURL(addr string, routeName string, hostSuffix string) (string, err
 			h = "127.0.0.1"
 		}
 		if h == "127.0.0.1" || h == "localhost" {
-			return fmt.Sprintf("http://%s.%s:%s/", routeName, hostSuffix, p), nil
+			return fmt.Sprintf("%s://%s.%s:%s/", scheme, routeName, hostSuffix, p), nil
 		}
-		return fmt.Sprintf("http://%s.%s:%s/", routeName, hostSuffix, p), nil
+		return fmt.Sprintf("%s://%s.%s:%s/", scheme, routeName, hostSuffix, p), nil
 	}
-	return fmt.Sprintf("http://%s.%s/", routeName, hostSuffix), nil
+	return fmt.Sprintf("%s://%s.%s/", scheme, routeName, hostSuffix), nil
 }
 
 func printUsage() {
@@ -315,9 +340,9 @@ Usage:
                                               Import routes from devport-radar or docker ps JSON
   looplane ls [--check] [--json] [--timeout D] [--store PATH]
                                               List routes (optionally probe health)
-  looplane serve [--addr A] [--host-suffix SUFFIX] [--watch] [--store PATH]
+  looplane serve [--addr A] [--host-suffix SUFFIX] [--tls-cert FILE --tls-key FILE] [--watch] [--store PATH]
                                               Start reverse proxy (default 127.0.0.1:7777)
-  looplane open NAME [--addr A] [--host-suffix SUFFIX] [--store PATH]
+  looplane open NAME [--addr A] [--host-suffix SUFFIX] [--https] [--store PATH]
                                               Print the stable URL for a configured route
   looplane completion SHELL                    Print a shell completion script
 
@@ -332,8 +357,10 @@ Examples:
   looplane ls --json
   looplane open api
   looplane open api --host-suffix localtest.me
+  looplane open api --host-suffix localtest.me --https
   looplane serve --addr 127.0.0.1:7777
   looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me
+  looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me --tls-cert ./certs/local.pem --tls-key ./certs/local-key.pem
   looplane ls --store ./looplane.routes.json
   looplane serve --store ./looplane.routes.json --watch
   looplane completion bash > ~/.local/share/bash-completion/completions/looplane
@@ -452,11 +479,11 @@ _looplane() {
             COMPREPLY=( $(compgen -W "--check --json --timeout --store" -- "$cur") )
             ;;
         serve)
-            COMPREPLY=( $(compgen -W "--addr --host-suffix --watch --store" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--addr --host-suffix --tls-cert --tls-key --watch --store" -- "$cur") )
             ;;
         open)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "--addr --host-suffix --store" -- "$cur") )
+                COMPREPLY=( $(compgen -W "--addr --host-suffix --https --store" -- "$cur") )
                 return
             fi
             local routes
@@ -516,8 +543,12 @@ _looplane() {
   case $state in
     args)
       case $words[2] in
-        rm|open)
+        rm)
           _looplane_routes
+          ;;
+        open)
+          _looplane_routes
+          _arguments '--addr[listen address]:address:' '--host-suffix[optional host-based routing suffix]:suffix:' '--https[print an HTTPS URL for TLS-enabled local proxy setups]' '--store[path to routes store]:file:_files'
           ;;
         import)
           _arguments '1:source:(devport-radar docker-ps)' '--file[path to import JSON]:file:_files' '--replace[replace existing routes instead of merging]' '--store[path to routes store]:file:_files'
@@ -526,7 +557,7 @@ _looplane() {
           _arguments '--check[probe upstream health for each route]' '--json[emit routes as JSON]' '--timeout[health check timeout]:duration:' '--store[path to routes store]:file:_files'
           ;;
         serve)
-          _arguments '--addr[listen address]:address:' '--host-suffix[optional host-based routing suffix]:suffix:' '--watch[reload routes from the selected store on each request]' '--store[path to routes store]:file:_files'
+          _arguments '--addr[listen address]:address:' '--host-suffix[optional host-based routing suffix]:suffix:' '--tls-cert[path to TLS certificate]:file:_files' '--tls-key[path to TLS private key]:file:_files' '--watch[reload routes from the selected store on each request]' '--store[path to routes store]:file:_files'
           ;;
         completion)
           _arguments '1:shell:(bash zsh fish powershell)'
@@ -573,6 +604,9 @@ complete -c looplane -n '__fish_seen_subcommand_from ls' -l timeout -d 'Health c
 complete -c looplane -n '__fish_seen_subcommand_from ls import serve open rm' -l store -d 'Path to routes store' -r
 complete -c looplane -n '__fish_seen_subcommand_from serve open' -l addr -d 'Listen/proxy address' -r
 complete -c looplane -n '__fish_seen_subcommand_from serve open' -l host-suffix -d 'Optional host-based routing suffix'
+complete -c looplane -n '__fish_seen_subcommand_from serve' -l tls-cert -d 'Path to TLS certificate' -r
+complete -c looplane -n '__fish_seen_subcommand_from serve' -l tls-key -d 'Path to TLS private key' -r
+complete -c looplane -n '__fish_seen_subcommand_from open' -l https -d 'Print an HTTPS URL'
 complete -c looplane -n '__fish_seen_subcommand_from serve' -l watch -d 'Reload routes from the selected store on each request'
 complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to import JSON' -r
 complete -c looplane -n '__fish_seen_subcommand_from import' -l replace -d 'Replace existing routes instead of merging'
@@ -626,12 +660,12 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane _
             }
         }
         'serve' {
-            @('--addr', '--host-suffix', '--watch', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('--addr', '--host-suffix', '--tls-cert', '--tls-key', '--watch', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }
         'open' {
-            @('--addr', '--host-suffix', '--store') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('--addr', '--host-suffix', '--https', '--store') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }

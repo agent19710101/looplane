@@ -55,6 +55,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Optional shared route config via `--store PATH` across route and serve commands
 - Start a local reverse proxy with `looplane serve`
 - Optional host-based routing with `looplane serve --host-suffix localtest.me`
+- Optional local HTTPS termination with `looplane serve --tls-cert ... --tls-key ...`
 - Live-reload served routes when the selected store changes
 - Path-prefix routing (`/api/...`, `/docs/...`)
 - Upstream path preservation (`http://target/base` + `/docs/page` => `/base/page`)
@@ -81,7 +82,7 @@ PowerShell:
 looplane completion powershell | Out-String | Invoke-Expression
 ```
 
-Generated completions read route names directly from the active route store, so `open` and `rm` stay in sync with the current config without scraping `ls --json`. If you work with a shared file via `--store PATH`, completions now follow that store too.
+Generated completions read route names directly from the active route store, so `open` and `rm` stay in sync with the current config without scraping `ls --json`. If you work with a shared file via `--store PATH`, completions follow that store too.
 
 ## Quickstart
 
@@ -126,7 +127,7 @@ looplane open api --store ./.looplane/routes.json
 looplane serve --store ./.looplane/routes.json --watch
 ```
 
-This keeps the single-user default simple while making shared route maps explicit and portable. Shell completions for `looplane open` and `looplane rm` now use the same shared store when `--store PATH` is present on the command line, and route-store updates are written atomically so an interrupted save does not clobber the last valid JSON file.
+This keeps the single-user default simple while making shared route maps explicit and portable. Shell completions for `looplane open` and `looplane rm` use the same shared store when `--store PATH` is present on the command line, and route-store updates are written atomically so an interrupted save does not clobber the last valid JSON file.
 
 Then open:
 
@@ -147,6 +148,23 @@ looplane open api --host-suffix localtest.me
 ```
 
 With host-based routing enabled, requests for `api.localtest.me:7777` go straight to the `api` route root, so you can use hostnames instead of `/api/...` path prefixes when that fits your workflow better.
+
+### Local HTTPS for host-based routing
+
+For browser flows that behave differently without TLS, `looplane` can terminate HTTPS locally when you already have a development certificate and key:
+
+```bash
+looplane serve \
+  --addr 127.0.0.1:7777 \
+  --host-suffix localtest.me \
+  --tls-cert ./certs/localtest-me.pem \
+  --tls-key ./certs/localtest-me-key.pem
+
+looplane open api --host-suffix localtest.me --https
+# -> https://api.localtest.me:7777/
+```
+
+A simple path is to generate a wildcard local certificate with `mkcert`, for example `*.localtest.me`, then point `looplane serve` at the resulting cert and key files. `looplane` intentionally stays small here: it uses the certs you provide instead of becoming a full certificate manager.
 
 ## Example output
 
@@ -185,38 +203,33 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` and Docker `docker ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` now emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` and Docker `docker ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
 - #9: import from additional local stack scanners, starting with Compose/Kubernetes-friendly sources
 - #10: add a minimal terminal dashboard for route health and quick actions
-- #11: evaluate optional HTTPS/dev-cert helpers for host-based local routing
+- #11: local HTTPS/dev-cert helpers for host-based local routing
 
 ## Minimal release plan
 
-### v0.9.0 — Docker import
+### v0.10.0 — local HTTPS helpers
 
-- `looplane import docker-ps` now ingests `docker ps --format json` output in either JSON-lines or JSON-array form
-- imported Docker routes use container names when available, fall back to image names, and map published host ports to `http://127.0.0.1:PORT`
-- containers without published host ports are skipped instead of creating broken routes
-- added regression coverage for Docker import parsing, multiple published ports, CLI wiring, and completion entries
+- `looplane serve` accepts `--tls-cert` and `--tls-key` for optional local HTTPS termination
+- `looplane open --https --host-suffix ...` prints stable HTTPS route URLs for TLS-enabled local proxy setups
+- documented an `mkcert`-friendly workflow instead of adding heavy built-in cert management
+- added regression coverage for HTTPS URL printing, TLS index output, completion flags, and invalid half-config rejection
 
-### v0.10.x — broader local-stack import coverage
+### v0.11.x — broader local-stack import coverage
 
 - land issue #9 with at least one more high-value import source beyond `devport-radar` and Docker
 - keep stdin/file ergonomics, deterministic naming, and conflict handling consistent across import paths
 - update docs around "discover first, then pin stable names"
 
-### v0.11.x — operator UX
+### v0.12.x — operator UX
 
 - land issue #10 with a small TUI/dashboard for route health, stable URLs, and quick follow-up actions
 - keep the dashboard additive rather than replacing the core CLI/scriptable flow
-
-### v0.12.x — host-based routing polish
-
-- resolve issue #11 with either a clear "not worth it" decision or a minimal optional HTTPS/dev-cert path
-- document the production-like browser/auth workflows that benefit from host-based local HTTPS
 
 ## Development
 
