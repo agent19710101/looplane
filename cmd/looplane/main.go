@@ -71,11 +71,11 @@ func run(args []string) error {
 		fmt.Printf("removed route %s\n", commandArgs[0])
 		return nil
 	case "import":
-		if len(commandArgs) < 1 || commandArgs[0] != "devport-radar" {
-			return errors.New("usage: looplane import devport-radar [--file PATH] [--replace] [--store PATH]")
+		if len(commandArgs) < 1 {
+			return errors.New("usage: looplane import [devport-radar|docker-ps] [--file PATH] [--replace] [--store PATH]")
 		}
 		fs := flag.NewFlagSet("import", flag.ContinueOnError)
-		file := fs.String("file", "", "path to devport-radar --json output (default: stdin)")
+		file := fs.String("file", "", "path to import JSON input (default: stdin)")
 		replace := fs.Bool("replace", false, "replace existing routes instead of merging")
 		if err := fs.Parse(commandArgs[1:]); err != nil {
 			return err
@@ -95,14 +95,22 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		result, err := app.ImportDevportRadarJSON(routes, input, app.ImportOptions{Replace: *replace})
+		var result app.ImportResult
+		switch commandArgs[0] {
+		case "devport-radar":
+			result, err = app.ImportDevportRadarJSON(routes, input, app.ImportOptions{Replace: *replace})
+		case "docker-ps":
+			result, err = app.ImportDockerPSJSON(routes, input, app.ImportOptions{Replace: *replace})
+		default:
+			return errors.New("usage: looplane import [devport-radar|docker-ps] [--file PATH] [--replace] [--store PATH]")
+		}
 		if err != nil {
 			return err
 		}
 		if err := store.Save(result.Routes); err != nil {
 			return err
 		}
-		fmt.Printf("imported devport-radar routes: added=%d updated=%d skipped=%d total=%d\n", result.Added, result.Updated, result.Skipped, len(result.Routes))
+		fmt.Printf("imported %s routes: added=%d updated=%d skipped=%d total=%d\n", commandArgs[0], result.Added, result.Updated, result.Skipped, len(result.Routes))
 		return nil
 	case "ls":
 		fs := flag.NewFlagSet("ls", flag.ContinueOnError)
@@ -303,8 +311,8 @@ func printUsage() {
 Usage:
   looplane add NAME URL [--store PATH]         Add or update a named upstream route
   looplane rm NAME [--store PATH]              Remove a route
-  looplane import devport-radar [--file PATH] [--replace] [--store PATH]
-                                              Import routes from devport-radar --json output
+  looplane import SOURCE [--file PATH] [--replace] [--store PATH]
+                                              Import routes from devport-radar or docker ps JSON
   looplane ls [--check] [--json] [--timeout D] [--store PATH]
                                               List routes (optionally probe health)
   looplane serve [--addr A] [--host-suffix SUFFIX] [--watch] [--store PATH]
@@ -318,6 +326,8 @@ Examples:
   looplane add docs http://127.0.0.1:4321/base
   devport-radar --json > radar.json
   looplane import devport-radar --file radar.json
+  docker ps --format json > docker.jsonl
+  looplane import docker-ps --file docker.jsonl
   looplane ls --check
   looplane ls --json
   looplane open api
@@ -417,7 +427,7 @@ _looplane() {
 
     case "${prev}" in
         import)
-            COMPREPLY=( $(compgen -W "devport-radar" -- "$cur") )
+            COMPREPLY=( $(compgen -W "devport-radar docker-ps" -- "$cur") )
             return
             ;;
         completion)
@@ -454,7 +464,7 @@ _looplane() {
             COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
             ;;
         import)
-            COMPREPLY=( $(compgen -W "devport-radar --file --replace --store" -- "$cur") )
+            COMPREPLY=( $(compgen -W "devport-radar docker-ps --file --replace --store" -- "$cur") )
             ;;
         completion)
             COMPREPLY=( $(compgen -W "bash zsh fish powershell" -- "$cur") )
@@ -510,7 +520,7 @@ _looplane() {
           _looplane_routes
           ;;
         import)
-          _arguments '1:source:(devport-radar)' '--file[path to devport-radar JSON]:file:_files' '--replace[replace existing routes instead of merging]' '--store[path to routes store]:file:_files'
+          _arguments '1:source:(devport-radar docker-ps)' '--file[path to import JSON]:file:_files' '--replace[replace existing routes instead of merging]' '--store[path to routes store]:file:_files'
           ;;
         ls)
           _arguments '--check[probe upstream health for each route]' '--json[emit routes as JSON]' '--timeout[health check timeout]:duration:' '--store[path to routes store]:file:_files'
@@ -556,7 +566,7 @@ complete -c looplane -n '__fish_use_subcommand' -f -a 'open' -d 'Print stable ro
 complete -c looplane -n '__fish_use_subcommand' -f -a 'completion' -d 'Print shell completion script'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'help' -d 'Show help'
 
-complete -c looplane -n '__fish_seen_subcommand_from import' -f -a 'devport-radar'
+complete -c looplane -n '__fish_seen_subcommand_from import' -f -a 'devport-radar docker-ps'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l check -d 'Probe upstream health for each route'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l json -d 'Emit routes as JSON'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l timeout -d 'Health check timeout' -r
@@ -564,7 +574,7 @@ complete -c looplane -n '__fish_seen_subcommand_from ls import serve open rm' -l
 complete -c looplane -n '__fish_seen_subcommand_from serve open' -l addr -d 'Listen/proxy address' -r
 complete -c looplane -n '__fish_seen_subcommand_from serve open' -l host-suffix -d 'Optional host-based routing suffix'
 complete -c looplane -n '__fish_seen_subcommand_from serve' -l watch -d 'Reload routes from the selected store on each request'
-complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to devport-radar JSON' -r
+complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to import JSON' -r
 complete -c looplane -n '__fish_seen_subcommand_from import' -l replace -d 'Replace existing routes instead of merging'
 complete -c looplane -n '__fish_seen_subcommand_from completion' -f -a 'bash zsh fish powershell'
 complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane __complete routes (commandline -ct) (__looplane_store_args) 2>/dev/null)'
@@ -606,7 +616,7 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane _
 
     switch ($tokens[1]) {
         'import' {
-            @('devport-radar', '--file', '--replace', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('devport-radar', 'docker-ps', '--file', '--replace', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }

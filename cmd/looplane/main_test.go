@@ -87,6 +87,40 @@ func TestRunImportDevportRadar(t *testing.T) {
 	}
 }
 
+func TestRunImportDockerPS(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	oldStdin := os.Stdin
+	defer func() { os.Stdin = oldStdin }()
+	input, err := os.CreateTemp(t.TempDir(), "docker-*.jsonl")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if _, err := input.WriteString("{\"Names\":\"api\",\"Image\":\"ghcr.io/acme/api:latest\",\"Ports\":\"0.0.0.0:8080->80/tcp\"}\n"); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	if _, err := input.Seek(0, 0); err != nil {
+		t.Fatalf("Seek: %v", err)
+	}
+	os.Stdin = input
+
+	stdout, stderr, err := captureRunOutput([]string{"import", "docker-ps"})
+	if err != nil {
+		t.Fatalf("import docker-ps: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "imported docker-ps routes: added=1") {
+		t.Fatalf("unexpected docker import output: %s", stdout)
+	}
+
+	stdout, stderr, err = captureRunOutput([]string{"ls", "--json"})
+	if err != nil {
+		t.Fatalf("ls --json: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "\"name\": \"api\"") || !strings.Contains(stdout, "\"url\": \"http://127.0.0.1:8080\"") {
+		t.Fatalf("json output missing docker route: %s", stdout)
+	}
+}
+
 func TestRunLSJSON(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
@@ -155,8 +189,8 @@ func TestRunCompletionBash(t *testing.T) {
 	if !strings.Contains(stdout, "complete -F _looplane looplane") {
 		t.Fatalf("unexpected bash completion output: %s", stdout)
 	}
-	if !strings.Contains(stdout, "devport-radar") {
-		t.Fatalf("bash completion missing import source: %s", stdout)
+	if !strings.Contains(stdout, "devport-radar") || !strings.Contains(stdout, "docker-ps") {
+		t.Fatalf("bash completion missing import sources: %s", stdout)
 	}
 	if !strings.Contains(stdout, "looplane __complete routes \"$cur\" \"${store_args[@]}\"") {
 		t.Fatalf("bash completion missing shared-store route completion: %s", stdout)

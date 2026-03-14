@@ -46,7 +46,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - List routes with `looplane ls`
 - JSON output for scripts and agents with `looplane ls --json`
 - Stable flat health-check JSON with `looplane ls --json --check`
-- Import routes from `devport-radar --json`
+- Import routes from `devport-radar --json` or `docker ps --format json`
 - Optional health checks with `looplane ls --check` (2xx/3xx healthy, 4xx/5xx surfaced as errors)
 - Remove routes with `looplane rm`
 - Print stable route URLs with `looplane open NAME`
@@ -90,6 +90,8 @@ looplane add api http://127.0.0.1:3000
 looplane add docs http://127.0.0.1:4321/base
 devport-radar --json > radar.json
 looplane import devport-radar --file radar.json
+docker ps --format json > docker.jsonl
+looplane import docker-ps --file docker.jsonl
 looplane ls --check
 looplane ls --json
 looplane open api
@@ -99,6 +101,18 @@ looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me
 ```
 
 While `looplane serve --watch` is running, later `add`, `rm`, and `import` changes are picked up on the next request, so you do not need to restart the proxy to refresh the route map.
+
+### Docker import
+
+If part of your local stack already runs in containers, `looplane` can import the published host ports from `docker ps --format json` output (JSON lines or a JSON array):
+
+```bash
+docker ps --format json > docker.jsonl
+looplane import docker-ps --file docker.jsonl
+looplane ls
+```
+
+Imported Docker routes use the container name when available, fall back to the image name if needed, and map published ports to `http://127.0.0.1:PORT`. Containers without published host ports are skipped.
 
 ### Shared route config
 
@@ -171,26 +185,26 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` now emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` and Docker `docker ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` now emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
-- import from additional local scanners beyond `devport-radar`
+- import from additional local scanners beyond `devport-radar` and `docker ps`
 - TUI dashboard for route health + quick switching
 - evaluate whether host-based routing needs HTTPS/dev-cert helpers later
 
 ## Minimal release plan
 
-### v0.8.0 — automation schema + stronger CI
+### v0.9.0 — Docker import
 
-- `looplane ls --json --check` now emits a flat lowercase schema (`name`, `url`, `ok`, `status_code`, `message`) that is easier to script against and safer to keep stable across refactors
-- added regression coverage that pins the checked JSON field names and rejects the old nested/capitalized shape
-- GitHub Actions now fails on unformatted Go code, runs `go vet ./...`, and still runs `go test ./...`
-- README examples and development docs now show the checked JSON output and the local pre-release commands contributors should run
+- `looplane import docker-ps` now ingests `docker ps --format json` output in either JSON-lines or JSON-array form
+- imported Docker routes use container names when available, fall back to image names, and map published host ports to `http://127.0.0.1:PORT`
+- containers without published host ports are skipped instead of creating broken routes
+- added regression coverage for Docker import parsing, multiple published ports, CLI wiring, and completion entries
 
 ### Next up
 
-- import from additional local scanner formats
+- import from additional local scanner formats beyond `devport-radar` and Docker
 - TUI dashboard for route health + quick switching
 - evaluate whether host-based routing needs HTTPS/dev-cert helpers later
 

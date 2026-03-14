@@ -63,3 +63,41 @@ func TestImportDevportRadarJSONReplace(t *testing.T) {
 		t.Fatalf("expected replace import to drop existing routes: %#v", result.Routes)
 	}
 }
+
+func TestImportDockerPSJSONImportsPublishedPorts(t *testing.T) {
+	input := strings.NewReader(`{"Names":"looplane-api-1","Image":"ghcr.io/acme/api:latest","Ports":"0.0.0.0:8080->80/tcp, [::]:8080->80/tcp"}
+{"Names":"grafana","Image":"grafana/grafana","Ports":"127.0.0.1:3001->3000/tcp"}
+{"Names":"db","Image":"postgres:16","Ports":"5432/tcp"}
+`)
+
+	result, err := ImportDockerPSJSON(nil, input, ImportOptions{})
+	if err != nil {
+		t.Fatalf("ImportDockerPSJSON: %v", err)
+	}
+	if result.Added != 2 || result.Updated != 0 || result.Skipped != 1 {
+		t.Fatalf("unexpected docker import summary: %#v", result)
+	}
+	if route, ok := FindRoute(result.Routes, "looplane-api-1"); !ok || route.URL != "http://127.0.0.1:8080" {
+		t.Fatalf("expected api route, got %#v", result.Routes)
+	}
+	if route, ok := FindRoute(result.Routes, "grafana"); !ok || route.URL != "http://127.0.0.1:3001" {
+		t.Fatalf("expected grafana route, got %#v", result.Routes)
+	}
+}
+
+func TestImportDockerPSJSONHandlesArraysAndMultiplePorts(t *testing.T) {
+	input := strings.NewReader(`[
+  {"Names":"traefik","Image":"traefik:v3","Ports":"0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp"}
+]`)
+
+	result, err := ImportDockerPSJSON(nil, input, ImportOptions{})
+	if err != nil {
+		t.Fatalf("ImportDockerPSJSON: %v", err)
+	}
+	if _, ok := FindRoute(result.Routes, "traefik"); !ok {
+		t.Fatalf("expected first docker port to keep base name: %#v", result.Routes)
+	}
+	if route, ok := FindRoute(result.Routes, "traefik-443"); !ok || route.URL != "http://127.0.0.1:443" {
+		t.Fatalf("expected second docker port route, got %#v", result.Routes)
+	}
+}

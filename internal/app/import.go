@@ -1,9 +1,12 @@
 package app
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"sort"
 	"strconv"
@@ -26,6 +29,12 @@ type DevportRadarService struct {
 	Protocol string `json:"protocol"`
 	Process  string `json:"process"`
 	Alias    string `json:"alias"`
+}
+
+type DockerPSContainer struct {
+	Names string `json:"Names"`
+	Image string `json:"Image"`
+	Ports string `json:"Ports"`
 }
 
 func ImportDevportRadarJSON(existing []Route, r io.Reader, opts ImportOptions) (ImportResult, error) {
@@ -118,6 +127,135 @@ func sanitizeImportName(raw string) string {
 	}
 	out := strings.Trim(b.String(), "-_")
 	return out
+}
+
+func ImportDockerPSJSON(existing []Route, r io.Reader, opts ImportOptions) (ImportResult, error) {
+	containers, err := decodeDockerPSContainers(r)
+	if err != nil {
+		return ImportResult{}, err
+	}
+
+	routesByName := make(map[string]Route, len(existing))
+	for _, route := range existing {
+		routesByName[route.Name] = route
+	}
+	if opts.Replace {
+		routesByName = map[string]Route{}
+	}
+
+	result := ImportResult{}
+	usedNames := make(map[string]struct{}, len(routesByName))
+	for name := range routesByName {
+		usedNames[name] = struct{}{}
+	}
+
+	for _, container := range containers {
+		ports := publishedDockerPorts(container.Ports)
+		if len(ports) == 0 {
+			result.Skipped++
+			continue
+		}
+		base := sanitizeImportName(firstNonEmpty(container.Names, container.Image))
+		if base == "" {
+			base = "docker"
+		}
+		for i, port := range ports {
+			nameBase := base
+			if i > 0 {
+				nameBase = fmt.Sprintf("%s-%d", base, port)
+			}
+			name := uniqueImportRouteName(nameBase, port, usedNames)
+			route := Route{Name: name, URL: (&url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(port))}).String()}
+			if prev, ok := routesByName[name]; ok {
+				if prev.URL == route.URL {
+					continue
+				}
+				result.Updated++
+			} else {
+				result.Added++
+			}
+			routesByName[name] = route
+			usedNames[name] = struct{}{}
+		}
+	}
+
+	result.Routes = make([]Route, 0, len(routesByName))
+	for _, route := range routesByName {
+		result.Routes = append(result.Routes, route)
+	}
+	sort.Slice(result.Routes, func(i, j int) bool { return result.Routes[i].Name < result.Routes[j].Name })
+	return result, nil
+}
+
+func decodeDockerPSContainers(r io.Reader) ([]DockerPSContainer, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("read docker ps json: %w", err)
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return nil, nil
+	}
+	if trimmed[0] == '[' {
+		var containers []DockerPSContainer
+		if err := json.Unmarshal(trimmed, &containers); err != nil {
+			return nil, fmt.Errorf("decode docker ps json: %w", err)
+		}
+		return containers, nil
+	}
+
+	var containers []DockerPSContainer
+	scanner := bufio.NewScanner(bytes.NewReader(trimmed))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var container DockerPSContainer
+		if err := json.Unmarshal([]byte(line), &container); err != nil {
+			return nil, fmt.Errorf("decode docker ps json: %w", err)
+		}
+		containers = append(containers, container)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan docker ps json: %w", err)
+	}
+	return containers, nil
+}
+
+func publishedDockerPorts(raw string) []int {
+	seen := map[int]struct{}{}
+	ports := []int{}
+	for _, chunk := range strings.Split(raw, ",") {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" || !strings.Contains(chunk, "->") {
+			continue
+		}
+		hostPart := strings.TrimSpace(strings.SplitN(chunk, "->", 2)[0])
+		if idx := strings.LastIndex(hostPart, ":"); idx >= 0 {
+			hostPart = hostPart[idx+1:]
+		}
+		port, err := strconv.Atoi(hostPart)
+		if err != nil || port <= 0 {
+			continue
+		}
+		if _, ok := seen[port]; ok {
+			continue
+		}
+		seen[port] = struct{}{}
+		ports = append(ports, port)
+	}
+	sort.Ints(ports)
+	return ports
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func uniqueImportRouteName(base string, port int, used map[string]struct{}) string {
