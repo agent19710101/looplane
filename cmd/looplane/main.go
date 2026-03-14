@@ -140,7 +140,7 @@ func run(args []string) error {
 		if *check {
 			fmt.Fprintln(w, "NAME\tTARGET\tSTATUS")
 			for _, status := range app.CheckRoutes(routes, *timeout) {
-				fmt.Fprintf(w, "%s\t%s\t%s\n", status.Route.Name, status.Route.URL, status.Message)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", status.Name, status.URL, status.Message)
 			}
 		} else {
 			fmt.Fprintln(w, "NAME\tTARGET")

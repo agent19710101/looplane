@@ -32,10 +32,11 @@ type Route struct {
 }
 
 type RouteStatus struct {
-	Route      Route
-	OK         bool
-	StatusCode int
-	Message    string
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	OK         bool   `json:"ok"`
+	StatusCode int    `json:"status_code"`
+	Message    string `json:"message"`
 }
 
 type Store struct {
@@ -202,7 +203,7 @@ func CheckRoutes(routes []Route, timeout time.Duration) []RouteStatus {
 }
 
 func checkRoute(client *http.Client, route Route) RouteStatus {
-	status := RouteStatus{Route: route}
+	status := RouteStatus{Name: route.Name, URL: route.URL}
 	statusCode, err := probeRoute(client, http.MethodHead, route.URL)
 	if err == nil {
 		status.OK = true

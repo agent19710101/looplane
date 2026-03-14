@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,6 +106,44 @@ func TestRunLSJSON(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "\"url\": \"http://127.0.0.1:3000\"") {
 		t.Fatalf("json output missing api url: %s", stdout)
+	}
+}
+
+func TestRunLSJSONCheckUsesStableFlatSchema(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	if err := run([]string{"add", "api", upstream.URL}); err != nil {
+		t.Fatalf("add api: %v", err)
+	}
+
+	stdout, stderr, err := captureRunOutput([]string{"ls", "--json", "--check"})
+	if err != nil {
+		t.Fatalf("ls --json --check: %v\nstderr=%s", err, stderr)
+	}
+
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("unmarshal checked json: %v\noutput=%s", err, stdout)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 checked route, got %d", len(got))
+	}
+	item := got[0]
+	for _, key := range []string{"name", "url", "ok", "status_code", "message"} {
+		if _, ok := item[key]; !ok {
+			t.Fatalf("missing key %q in checked json: %#v", key, item)
+		}
+	}
+	if _, ok := item["Route"]; ok {
+		t.Fatalf("unexpected legacy Route field in checked json: %#v", item)
+	}
+	if _, ok := item["StatusCode"]; ok {
+		t.Fatalf("unexpected legacy StatusCode field in checked json: %#v", item)
 	}
 }
 
