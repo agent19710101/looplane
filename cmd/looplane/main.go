@@ -69,6 +69,40 @@ func run(args []string) error {
 		}
 		fmt.Printf("removed route %s\n", args[1])
 		return nil
+	case "import":
+		if len(args) < 2 || args[1] != "devport-radar" {
+			return errors.New("usage: looplane import devport-radar [--file PATH] [--replace]")
+		}
+		fs := flag.NewFlagSet("import", flag.ContinueOnError)
+		file := fs.String("file", "", "path to devport-radar --json output (default: stdin)")
+		replace := fs.Bool("replace", false, "replace existing routes instead of merging")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		var input *os.File
+		if *file == "" || *file == "-" {
+			input = os.Stdin
+		} else {
+			f, err := os.Open(*file)
+			if err != nil {
+				return fmt.Errorf("open import file: %w", err)
+			}
+			defer f.Close()
+			input = f
+		}
+		routes, err := store.Load()
+		if err != nil {
+			return err
+		}
+		result, err := app.ImportDevportRadarJSON(routes, input, app.ImportOptions{Replace: *replace})
+		if err != nil {
+			return err
+		}
+		if err := store.Save(result.Routes); err != nil {
+			return err
+		}
+		fmt.Printf("imported devport-radar routes: added=%d updated=%d skipped=%d total=%d\n", result.Added, result.Updated, result.Skipped, len(result.Routes))
+		return nil
 	case "ls":
 		fs := flag.NewFlagSet("ls", flag.ContinueOnError)
 		check := fs.Bool("check", false, "probe upstream health for each route")
@@ -181,6 +215,8 @@ func printUsage() {
 Usage:
   looplane add NAME URL                        Add or update a named upstream route
   looplane rm NAME                             Remove a route
+  looplane import devport-radar [--file PATH] [--replace]
+                                              Import routes from devport-radar --json output
   looplane ls [--check] [--json] [--timeout D] List routes (optionally probe health)
   looplane serve [--addr A]                    Start reverse proxy (default 127.0.0.1:7777)
   looplane open NAME [--addr A]                Print the stable URL for a configured route
@@ -188,6 +224,8 @@ Usage:
 Examples:
   looplane add api http://127.0.0.1:3000
   looplane add docs http://127.0.0.1:4321/base
+  devport-radar --json > radar.json
+  looplane import devport-radar --file radar.json
   looplane ls --check
   looplane ls --json
   looplane open api

@@ -45,6 +45,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Persist routes in `~/.config/looplane/routes.json`
 - List routes with `looplane ls`
 - JSON output for scripts and agents with `looplane ls --json`
+- Import routes from `devport-radar --json`
 - Optional health checks with `looplane ls --check`
 - Remove routes with `looplane rm`
 - Print stable route URLs with `looplane open NAME`
@@ -65,6 +66,8 @@ go install github.com/agent19710101/looplane/cmd/looplane@latest
 ```bash
 looplane add api http://127.0.0.1:3000
 looplane add docs http://127.0.0.1:4321/base
+devport-radar --json > radar.json
+looplane import devport-radar --file radar.json
 looplane ls --check
 looplane ls --json
 looplane open api
@@ -105,12 +108,12 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, and stable URL printing are already in place.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, and `devport-radar` snapshot import are already in place.
 
 ## Roadmap
 
-- import from local scanners like `devport-radar`
 - optional file-watch mode for shared team route config
+- import from additional local scanners beyond `devport-radar`
 - shell completions
 - TUI dashboard for route health + quick switching
 - optional host-based routing (`api.localtest.me` style)

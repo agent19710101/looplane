@@ -50,6 +50,40 @@ func TestRunOpenFailsForUnknownRoute(t *testing.T) {
 	}
 }
 
+func TestRunImportDevportRadar(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	oldStdin := os.Stdin
+	defer func() { os.Stdin = oldStdin }()
+	input, err := os.CreateTemp(t.TempDir(), "radar-*.json")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if _, err := input.WriteString(`[{"port":3000,"protocol":"http","alias":"api"}]`); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	if _, err := input.Seek(0, 0); err != nil {
+		t.Fatalf("Seek: %v", err)
+	}
+	os.Stdin = input
+
+	stdout, stderr, err := captureRunOutput([]string{"import", "devport-radar"})
+	if err != nil {
+		t.Fatalf("import devport-radar: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "added=1") {
+		t.Fatalf("unexpected import output: %s", stdout)
+	}
+
+	stdout, stderr, err = captureRunOutput([]string{"ls", "--json"})
+	if err != nil {
+		t.Fatalf("ls --json: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "\"name\": \"api\"") || !strings.Contains(stdout, "\"url\": \"http://127.0.0.1:3000\"") {
+		t.Fatalf("json output missing imported route: %s", stdout)
+	}
+}
+
 func TestRunLSJSON(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
