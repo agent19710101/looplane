@@ -189,9 +189,9 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 
 ## Roadmap
 
-- import from additional local scanners beyond `devport-radar` and `docker ps`
-- TUI dashboard for route health + quick switching
-- evaluate whether host-based routing needs HTTPS/dev-cert helpers later
+- #9: import from additional local stack scanners, starting with Compose/Kubernetes-friendly sources
+- #10: add a minimal terminal dashboard for route health and quick actions
+- #11: evaluate optional HTTPS/dev-cert helpers for host-based local routing
 
 ## Minimal release plan
 
@@ -202,11 +202,21 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 - containers without published host ports are skipped instead of creating broken routes
 - added regression coverage for Docker import parsing, multiple published ports, CLI wiring, and completion entries
 
-### Next up
+### v0.10.x — broader local-stack import coverage
 
-- import from additional local scanner formats beyond `devport-radar` and Docker
-- TUI dashboard for route health + quick switching
-- evaluate whether host-based routing needs HTTPS/dev-cert helpers later
+- land issue #9 with at least one more high-value import source beyond `devport-radar` and Docker
+- keep stdin/file ergonomics, deterministic naming, and conflict handling consistent across import paths
+- update docs around "discover first, then pin stable names"
+
+### v0.11.x — operator UX
+
+- land issue #10 with a small TUI/dashboard for route health, stable URLs, and quick follow-up actions
+- keep the dashboard additive rather than replacing the core CLI/scriptable flow
+
+### v0.12.x — host-based routing polish
+
+- resolve issue #11 with either a clear "not worth it" decision or a minimal optional HTTPS/dev-cert path
+- document the production-like browser/auth workflows that benefit from host-based local HTTPS
 
 ## Development
 
