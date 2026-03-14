@@ -117,8 +117,8 @@ func TestRunCompletionBash(t *testing.T) {
 	if !strings.Contains(stdout, "devport-radar") {
 		t.Fatalf("bash completion missing import source: %s", stdout)
 	}
-	if !strings.Contains(stdout, "looplane __complete routes") {
-		t.Fatalf("bash completion missing direct route completion: %s", stdout)
+	if !strings.Contains(stdout, "looplane __complete routes \"$cur\" \"${store_args[@]}\"") {
+		t.Fatalf("bash completion missing shared-store route completion: %s", stdout)
 	}
 }
 
@@ -133,6 +133,9 @@ func TestRunCompletionFish(t *testing.T) {
 	if !strings.Contains(stdout, "__fish_seen_subcommand_from completion") {
 		t.Fatalf("fish completion missing shell completion entries: %s", stdout)
 	}
+	if !strings.Contains(stdout, "(__looplane_store_args)") {
+		t.Fatalf("fish completion missing shared-store route completion: %s", stdout)
+	}
 }
 
 func TestRunCompletionZsh(t *testing.T) {
@@ -143,8 +146,11 @@ func TestRunCompletionZsh(t *testing.T) {
 	if !strings.Contains(stdout, "#compdef looplane") {
 		t.Fatalf("unexpected zsh completion output: %s", stdout)
 	}
-	if !strings.Contains(stdout, "looplane __complete routes") {
-		t.Fatalf("zsh completion missing direct route completion: %s", stdout)
+	if !strings.Contains(stdout, "_looplane_store_args") {
+		t.Fatalf("zsh completion missing shared-store helper: %s", stdout)
+	}
+	if !strings.Contains(stdout, "store_args=(${reply[@]})") {
+		t.Fatalf("zsh completion missing shared-store route completion: %s", stdout)
 	}
 	if !strings.Contains(stdout, "rm|open") {
 		t.Fatalf("zsh completion missing route-aware rm/open handling: %s", stdout)
@@ -159,8 +165,11 @@ func TestRunCompletionPowerShell(t *testing.T) {
 	if !strings.Contains(stdout, "Register-ArgumentCompleter -Native -CommandName looplane") {
 		t.Fatalf("unexpected PowerShell completion output: %s", stdout)
 	}
-	if !strings.Contains(stdout, "looplane __complete routes $wordToComplete") {
-		t.Fatalf("PowerShell completion missing direct route completion: %s", stdout)
+	if !strings.Contains(stdout, "$storeArgs = @()") {
+		t.Fatalf("PowerShell completion missing shared-store helper: %s", stdout)
+	}
+	if !strings.Contains(stdout, "looplane __complete routes $wordToComplete @storeArgs") {
+		t.Fatalf("PowerShell completion missing shared-store route completion: %s", stdout)
 	}
 	if !strings.Contains(stdout, "'open'") || !strings.Contains(stdout, "'rm'") {
 		t.Fatalf("PowerShell completion missing route-aware open/rm handling: %s", stdout)
@@ -193,6 +202,26 @@ func TestRunCompleteRoutesUsesStoreAndPrefix(t *testing.T) {
 	}
 	if got := strings.TrimSpace(stdout); got != "admin\napi" {
 		t.Fatalf("unexpected completion output: %q", got)
+	}
+}
+
+func TestRunCompleteRoutesUsesSharedStorePath(t *testing.T) {
+	sharedDir := t.TempDir()
+	sharedStore := filepath.Join(sharedDir, "team", "routes.json")
+
+	if err := run([]string{"add", "api", "http://127.0.0.1:3000", "--store", sharedStore}); err != nil {
+		t.Fatalf("add api with shared store: %v", err)
+	}
+	if err := run([]string{"add", "admin", "http://127.0.0.1:9000", "--store", sharedStore}); err != nil {
+		t.Fatalf("add admin with shared store: %v", err)
+	}
+
+	stdout, stderr, err := captureRunOutput([]string{"__complete", "routes", "a", "--store", sharedStore})
+	if err != nil {
+		t.Fatalf("__complete routes with shared store: %v\nstderr=%s", err, stderr)
+	}
+	if got := strings.TrimSpace(stdout); got != "admin\napi" {
+		t.Fatalf("unexpected shared-store completion output: %q", got)
 	}
 }
 

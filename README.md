@@ -79,7 +79,7 @@ PowerShell:
 looplane completion powershell | Out-String | Invoke-Expression
 ```
 
-Generated completions read route names directly from `~/.config/looplane/routes.json`, so `open` and `rm` stay in sync with the current store without scraping `ls --json`.
+Generated completions read route names directly from the active route store, so `open` and `rm` stay in sync with the current config without scraping `ls --json`. If you work with a shared file via `--store PATH`, completions now follow that store too.
 
 ## Quickstart
 
@@ -104,10 +104,11 @@ Use `--store PATH` when a repo, devcontainer, or team workflow needs a shared ro
 looplane add api http://127.0.0.1:3000 --store ./.looplane/routes.json
 looplane import devport-radar --file radar.json --store ./.looplane/routes.json
 looplane ls --store ./.looplane/routes.json
+looplane open api --store ./.looplane/routes.json
 looplane serve --store ./.looplane/routes.json --watch
 ```
 
-This keeps the single-user default simple while making shared route maps explicit and portable.
+This keeps the single-user default simple while making shared route maps explicit and portable. Shell completions for `looplane open` and `looplane rm` now use the same shared store when `--store PATH` is present on the command line.
 
 Then open:
 
@@ -143,18 +144,22 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, optional shared stores, and watch-mode route reloads for a running proxy are already in place. Route-name completion for `open` and `rm` is store-backed, so the interactive UX follows the selected config directly. GitHub Actions now runs `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, optional shared stores, and watch-mode route reloads for a running proxy are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. GitHub Actions now runs `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
-- improve shell completion support for shared `--store` workflows
 - import from additional local scanners beyond `devport-radar`
 - TUI dashboard for route health + quick switching
 - optional host-based routing (`api.localtest.me` style)
 
 ## Minimal release plan
 
-### v0.6.1 — broader local routing surface
+### v0.6.1 — shared-store completion polish
+
+- shell completions for `open` and `rm` now follow the active `--store PATH`
+- tightened completion coverage with shared-store regression tests across CLI/completion flows
+
+### Next up
 
 - import from additional local scanner formats
 - optional host-based routing (`api.localtest.me` style)

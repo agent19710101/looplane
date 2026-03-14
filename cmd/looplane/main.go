@@ -292,16 +292,24 @@ Examples:
 
 func runCompletion(store *app.Store, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: looplane __complete routes [PREFIX]")
+		return errors.New("usage: looplane __complete routes [PREFIX] [--store PATH]")
 	}
 	switch args[0] {
 	case "routes":
+		completionArgs := args[1:]
 		prefix := ""
-		if len(args) > 2 {
-			return errors.New("usage: looplane __complete routes [PREFIX]")
+		if len(completionArgs) > 0 && !strings.HasPrefix(completionArgs[0], "-") {
+			prefix = completionArgs[0]
+			completionArgs = completionArgs[1:]
 		}
-		if len(args) == 2 {
-			prefix = args[1]
+		if len(completionArgs) > 0 {
+			storePath, err := completionStorePath(completionArgs)
+			if err != nil {
+				return err
+			}
+			if storePath != "" {
+				store = app.NewStore(storePath)
+			}
 		}
 		routes, err := store.Load()
 		if err != nil {
@@ -316,15 +324,55 @@ func runCompletion(store *app.Store, args []string) error {
 	}
 }
 
+func completionStorePath(args []string) (string, error) {
+	storePath := ""
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--store":
+			if i+1 >= len(args) {
+				return "", errors.New("--store requires a path")
+			}
+			storePath = args[i+1]
+			i++
+		case strings.HasPrefix(args[i], "--store="):
+			storePath = strings.TrimPrefix(args[i], "--store=")
+		}
+	}
+	if strings.TrimSpace(storePath) == "" {
+		return storePath, nil
+	}
+	return storePath, nil
+}
+
 func completionScript(shell string) (string, error) {
 	switch shell {
 	case "bash":
 		return `# bash completion for looplane
+_looplane_store_args() {
+    local i
+    for ((i=1; i<${#words[@]}; i++)); do
+        case "${words[i]}" in
+            --store)
+                if (( i + 1 < ${#words[@]} )); then
+                    printf '%s\n' "--store" "${words[i+1]}"
+                fi
+                return
+                ;;
+            --store=*)
+                printf '%s\n' "${words[i]}"
+                return
+                ;;
+        esac
+    done
+}
+
 _looplane() {
     local cur prev words cword
     _init_completion || return
 
     local commands="add rm import ls serve open completion help"
+    local -a store_args
+    mapfile -t store_args < <(_looplane_store_args)
 
     case "${prev}" in
         import)
@@ -337,7 +385,7 @@ _looplane() {
             ;;
         open|rm)
             local routes
-            routes=$(looplane __complete routes "$cur" 2>/dev/null)
+            routes=$(looplane __complete routes "$cur" "${store_args[@]}" 2>/dev/null)
             COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
             return
             ;;
@@ -361,7 +409,7 @@ _looplane() {
                 return
             fi
             local routes
-            routes=$(looplane __complete routes "$cur" 2>/dev/null)
+            routes=$(looplane __complete routes "$cur" "${store_args[@]}" 2>/dev/null)
             COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
             ;;
         import)
@@ -378,9 +426,31 @@ complete -F _looplane looplane
 	case "zsh":
 		return `#compdef looplane
 
+_looplane_store_args() {
+  local -a out
+  local i
+  for ((i = 1; i <= CURRENT; i++)); do
+    case ${words[i]} in
+      --store)
+        if (( i + 1 <= CURRENT )); then
+          out+=(--store "${words[i+1]}")
+        fi
+        break
+        ;;
+      --store=*)
+        out+=("${words[i]}")
+        break
+        ;;
+    esac
+  done
+  reply=(${out[@]})
+}
+
 _looplane_routes() {
-  local -a routes
-  routes=(${(f)"$(looplane __complete routes "${PREFIX:-}" 2>/dev/null)"})
+  local -a routes store_args
+  _looplane_store_args
+  store_args=(${reply[@]})
+  routes=(${(f)"$(looplane __complete routes "${PREFIX:-}" ${store_args:+${store_args[@]}} 2>/dev/null)"})
   _describe 'route' routes
 }
 
@@ -418,7 +488,25 @@ _looplane() {
 _looplane "$@"
 `, nil
 	case "fish":
-		return `complete -c looplane -n '__fish_use_subcommand' -f -a 'add' -d 'Add or update a named upstream route'
+		return `function __looplane_store_args
+    set -l tokens (commandline -opc)
+    for i in (seq 1 (count $tokens))
+        set -l token $tokens[$i]
+        if test "$token" = "--store"
+            set -l next_index (math $i + 1)
+            if test $next_index -le (count $tokens)
+                printf '%s\n' --store $tokens[$next_index]
+            end
+            return
+        end
+        if string match -q -- '--store=*' "$token"
+            printf '%s\n' "$token"
+            return
+        end
+    end
+end
+
+complete -c looplane -n '__fish_use_subcommand' -f -a 'add' -d 'Add or update a named upstream route'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'rm' -d 'Remove a route'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'import' -d 'Import routes from devport-radar JSON'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'ls' -d 'List routes'
@@ -437,7 +525,7 @@ complete -c looplane -n '__fish_seen_subcommand_from serve' -l watch -d 'Reload 
 complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to devport-radar JSON' -r
 complete -c looplane -n '__fish_seen_subcommand_from import' -l replace -d 'Replace existing routes instead of merging'
 complete -c looplane -n '__fish_seen_subcommand_from completion' -f -a 'bash zsh fish powershell'
-complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane __complete routes (commandline -ct) 2>/dev/null)'
+complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane __complete routes (commandline -ct) (__looplane_store_args) 2>/dev/null)'
 `, nil
 	case "powershell":
 		return `Register-ArgumentCompleter -Native -CommandName looplane -ScriptBlock {
@@ -447,14 +535,26 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane _
     $shells = 'bash', 'zsh', 'fish', 'powershell'
     $routeNames = @()
 
+    $tokens = $commandAst.CommandElements | ForEach-Object { $_.Extent.Text }
+    $storeArgs = @()
+    for ($i = 0; $i -lt $tokens.Count; $i++) {
+        if ($tokens[$i] -eq '--store' -and $i + 1 -lt $tokens.Count) {
+            $storeArgs = @('--store', $tokens[$i + 1])
+            break
+        }
+        if ($tokens[$i] -like '--store=*') {
+            $storeArgs = @($tokens[$i])
+            break
+        }
+    }
+
     try {
-        $routes = looplane __complete routes $wordToComplete 2>$null
+        $routes = looplane __complete routes $wordToComplete @storeArgs 2>$null
         if ($routes) {
             $routeNames = @($routes)
         }
     } catch {}
 
-    $tokens = $commandAst.CommandElements | ForEach-Object { $_.Extent.Text }
     if ($tokens.Count -le 1) {
         $commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
