@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -26,7 +27,7 @@ func run(args []string) error {
 		return nil
 	}
 
-	storePath, err := app.DefaultStorePath()
+	storePath, err := defaultStorePath()
 	if err != nil {
 		return err
 	}
@@ -71,6 +72,7 @@ func run(args []string) error {
 	case "ls":
 		fs := flag.NewFlagSet("ls", flag.ContinueOnError)
 		check := fs.Bool("check", false, "probe upstream health for each route")
+		jsonOut := fs.Bool("json", false, "emit routes as JSON for scripts and agents")
 		timeout := fs.Duration("timeout", 2*time.Second, "health check timeout (used with --check)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -78,6 +80,22 @@ func run(args []string) error {
 		routes, err := store.Load()
 		if err != nil {
 			return err
+		}
+		if *jsonOut {
+			if *check {
+				payload, err := json.MarshalIndent(app.CheckRoutes(routes, *timeout), "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(payload))
+				return nil
+			}
+			payload, err := json.MarshalIndent(routes, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(payload))
+			return nil
 		}
 		if len(routes) == 0 {
 			fmt.Println("no routes configured")
@@ -117,10 +135,33 @@ func run(args []string) error {
 		}
 		return http.ListenAndServe(*addr, srv.Handler())
 	case "open":
-		if len(args) != 3 {
-			return errors.New("usage: looplane open ADDR NAME")
+		openArgs := args[1:]
+		routeName := ""
+		if len(openArgs) > 0 && !strings.HasPrefix(openArgs[0], "-") {
+			routeName = strings.Trim(openArgs[0], "/")
+			openArgs = openArgs[1:]
 		}
-		fmt.Printf("http://%s/%s/\n", strings.TrimSuffix(args[1], "/"), strings.Trim(args[2], "/"))
+		fs := flag.NewFlagSet("open", flag.ContinueOnError)
+		addr := fs.String("addr", "127.0.0.1:7777", "looplane proxy address")
+		if err := fs.Parse(openArgs); err != nil {
+			return err
+		}
+		if routeName == "" {
+			if fs.NArg() != 1 {
+				return errors.New("usage: looplane open NAME [--addr 127.0.0.1:7777]")
+			}
+			routeName = strings.Trim(fs.Arg(0), "/")
+		} else if fs.NArg() != 0 {
+			return errors.New("usage: looplane open NAME [--addr 127.0.0.1:7777]")
+		}
+		routes, err := store.Load()
+		if err != nil {
+			return err
+		}
+		if _, ok := app.FindRoute(routes, routeName); !ok {
+			return fmt.Errorf("route %s not found", routeName)
+		}
+		fmt.Printf("http://%s/%s/\n", strings.TrimSuffix(*addr, "/"), routeName)
 		return nil
 	case "help", "-h", "--help":
 		printUsage()
@@ -130,20 +171,26 @@ func run(args []string) error {
 	}
 }
 
+func defaultStorePath() (string, error) {
+	return app.DefaultStorePath()
+}
+
 func printUsage() {
 	fmt.Print(`looplane keeps stable names for flaky local dev ports.
 
 Usage:
-  looplane add NAME URL                Add or update a named upstream route
-  looplane rm NAME                     Remove a route
-  looplane ls [--check] [--timeout D]  List routes (optionally probe health)
-  looplane serve [--addr A]            Start reverse proxy (default 127.0.0.1:7777)
-  looplane open ADDR NAME              Print the stable URL for a route
+  looplane add NAME URL                        Add or update a named upstream route
+  looplane rm NAME                             Remove a route
+  looplane ls [--check] [--json] [--timeout D] List routes (optionally probe health)
+  looplane serve [--addr A]                    Start reverse proxy (default 127.0.0.1:7777)
+  looplane open NAME [--addr A]                Print the stable URL for a configured route
 
 Examples:
   looplane add api http://127.0.0.1:3000
   looplane add docs http://127.0.0.1:4321/base
   looplane ls --check
+  looplane ls --json
+  looplane open api
   looplane serve --addr 127.0.0.1:7777
   curl http://127.0.0.1:7777/api/healthz
 `)

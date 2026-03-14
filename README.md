@@ -44,8 +44,10 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Add/update named routes with `looplane add`
 - Persist routes in `~/.config/looplane/routes.json`
 - List routes with `looplane ls`
+- JSON output for scripts and agents with `looplane ls --json`
 - Optional health checks with `looplane ls --check`
 - Remove routes with `looplane rm`
+- Print stable route URLs with `looplane open NAME`
 - Start a local reverse proxy with `looplane serve`
 - Path-prefix routing (`/api/...`, `/docs/...`)
 - Upstream path preservation (`http://target/base` + `/docs/page` => `/base/page`)
@@ -64,6 +66,8 @@ go install github.com/agent19710101/looplane/cmd/looplane@latest
 looplane add api http://127.0.0.1:3000
 looplane add docs http://127.0.0.1:4321/base
 looplane ls --check
+looplane ls --json
+looplane open api
 looplane serve --addr 127.0.0.1:7777
 ```
 
@@ -83,15 +87,25 @@ NAME  TARGET                         STATUS
 api   http://127.0.0.1:3000          ok (200)
 docs  http://127.0.0.1:4321/base     ok (200)
 
-$ looplane serve --addr 127.0.0.1:7777
-looplane listening on http://127.0.0.1:7777
-- http://127.0.0.1:7777/api/ -> http://127.0.0.1:3000
-- http://127.0.0.1:7777/docs/ -> http://127.0.0.1:4321/base
+$ looplane ls --json
+[
+  {
+    "name": "api",
+    "url": "http://127.0.0.1:3000"
+  },
+  {
+    "name": "docs",
+    "url": "http://127.0.0.1:4321/base"
+  }
+]
+
+$ looplane open api
+http://127.0.0.1:7777/api/
 ```
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks landed in the first post-v0 iteration.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, and stable URL printing are already in place.
 
 ## Roadmap
 
