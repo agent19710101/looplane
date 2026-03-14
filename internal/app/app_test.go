@@ -160,6 +160,43 @@ func TestIndexIncludesRoutes(t *testing.T) {
 	}
 }
 
+func TestServerHandlerReloadsRoutesWithoutRestart(t *testing.T) {
+	routes := []Route{{Name: "api", URL: "http://api-v1.test"}}
+	server := &Server{
+		Addr: "127.0.0.1:7777",
+		LoadRoutes: func() ([]Route, error) {
+			cloned := make([]Route, len(routes))
+			copy(cloned, routes)
+			return cloned, nil
+		},
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return response(req, http.StatusOK, req.URL.Host+req.URL.Path), nil
+		}),
+	}
+
+	handler := server.Handler()
+
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/users", nil))
+	if got := strings.TrimSpace(first.Body.String()); got != "api-v1.test/users" {
+		t.Fatalf("unexpected first proxy target: %q", got)
+	}
+
+	routes = []Route{{Name: "api", URL: "http://api-v2.test/base"}, {Name: "docs", URL: "http://docs.test"}}
+
+	second := httptest.NewRecorder()
+	handler.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/users", nil))
+	if got := strings.TrimSpace(second.Body.String()); got != "api-v2.test/base/users" {
+		t.Fatalf("unexpected reloaded proxy target: %q", got)
+	}
+
+	third := httptest.NewRecorder()
+	handler.ServeHTTP(third, httptest.NewRequest(http.MethodGet, "/docs/", nil))
+	if got := strings.TrimSpace(third.Body.String()); got != "docs.test/" {
+		t.Fatalf("unexpected newly loaded route target: %q", got)
+	}
+}
+
 func withHTTPClient(t *testing.T, transport http.RoundTripper) {
 	t.Helper()
 

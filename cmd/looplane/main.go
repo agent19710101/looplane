@@ -158,7 +158,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		srv := &app.Server{Addr: *addr, Routes: routes, Stdout: os.Stdout}
+		srv := &app.Server{Addr: *addr, Routes: routes, LoadRoutes: store.Load, Stdout: os.Stdout}
 		fmt.Printf("looplane listening on http://%s\n", *addr)
 		if len(routes) == 0 {
 			fmt.Println("tip: add routes with `looplane add NAME http://127.0.0.1:PORT`")

@@ -217,21 +217,38 @@ func probeRoute(client *http.Client, method string, rawURL string) (int, error) 
 }
 
 type Server struct {
-	Addr      string
-	Routes    []Route
-	Stdout    io.Writer
-	Transport http.RoundTripper
+	Addr       string
+	Routes     []Route
+	LoadRoutes func() ([]Route, error)
+	Stdout     io.Writer
+	Transport  http.RoundTripper
+}
+
+func (s *Server) currentRoutes() ([]Route, error) {
+	if s.LoadRoutes != nil {
+		return s.LoadRoutes()
+	}
+	return s.Routes, nil
+}
+
+func routesByName(routes []Route) map[string]Route {
+	byName := make(map[string]Route, len(routes))
+	for _, route := range routes {
+		byName[route.Name] = route
+	}
+	return byName
 }
 
 func (s *Server) Handler() http.Handler {
-	byName := map[string]Route{}
-	for _, route := range s.Routes {
-		byName[route.Name] = route
-	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		routes, err := s.currentRoutes()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("load routes: %v", err), http.StatusInternalServerError)
+			return
+		}
 		if r.URL.Path == "/" {
-			writeIndex(w, s.Addr, s.Routes)
+			writeIndex(w, s.Addr, routes)
 			return
 		}
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
@@ -239,7 +256,7 @@ func (s *Server) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		route, ok := byName[parts[0]]
+		route, ok := routesByName(routes)[parts[0]]
 		if !ok {
 			http.NotFound(w, r)
 			return

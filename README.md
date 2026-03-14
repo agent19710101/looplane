@@ -52,6 +52,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Generate shell completions with `looplane completion [bash|zsh|fish|powershell]`
 - Store-backed route-name completion for `looplane open` and `looplane rm`
 - Start a local reverse proxy with `looplane serve`
+- Live-reload served routes when `add`, `rm`, or `import` updates the store
 - Path-prefix routing (`/api/...`, `/docs/...`)
 - Upstream path preservation (`http://target/base` + `/docs/page` => `/base/page`)
 - Helpful plaintext index page at `/`
@@ -92,6 +93,8 @@ looplane open api
 looplane serve --addr 127.0.0.1:7777
 ```
 
+While `looplane serve` is running, later `add`, `rm`, and `import` changes are picked up on the next request, so you do not need to restart the proxy to refresh the route map.
+
 Then open:
 
 ```bash
@@ -126,7 +129,7 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, and generated shell completions are already in place. Route-name completion for `open` and `rm` is now store-backed, so the interactive UX follows the saved config directly.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, and live route reloads for a running proxy are already in place. Route-name completion for `open` and `rm` is now store-backed, so the interactive UX follows the saved config directly.
 
 ## Roadmap
 
@@ -139,7 +142,6 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 
 ### v0.5.0 — interactive polish
 
-- hot-reload served routes without restarting `looplane serve`
 - complete test coverage for zsh + PowerShell completion output
 - keep the default branch releaseable with `go test ./...` green
 
