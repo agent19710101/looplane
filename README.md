@@ -50,6 +50,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Remove routes with `looplane rm`
 - Print stable route URLs with `looplane open NAME`
 - Generate shell completions with `looplane completion [bash|zsh|fish|powershell]`
+- Store-backed route-name completion for `looplane open` and `looplane rm`
 - Start a local reverse proxy with `looplane serve`
 - Path-prefix routing (`/api/...`, `/docs/...`)
 - Upstream path preservation (`http://target/base` + `/docs/page` => `/base/page`)
@@ -75,6 +76,8 @@ PowerShell:
 ```powershell
 looplane completion powershell | Out-String | Invoke-Expression
 ```
+
+Generated completions read route names directly from `~/.config/looplane/routes.json`, so `open` and `rm` stay in sync with the current store without scraping `ls --json`.
 
 ## Quickstart
 
@@ -123,13 +126,12 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, and generated shell completions are already in place.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, and generated shell completions are already in place. Route-name completion for `open` and `rm` is now store-backed, so the interactive UX follows the saved config directly.
 
 ## Roadmap
 
 - optional file-watch mode for shared team route config
 - import from additional local scanners beyond `devport-radar`
-- smarter route-name completion sourced directly from config/store
 - TUI dashboard for route health + quick switching
 - optional host-based routing (`api.localtest.me` style)
 

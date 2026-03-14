@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,12 +27,14 @@ func TestValidateRouteRejectsBadName(t *testing.T) {
 }
 
 func TestCheckRoutesReportsHealthyTarget(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
+	withHTTPClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodHead {
+			t.Fatalf("expected HEAD probe, got %s", req.Method)
+		}
+		return response(req, http.StatusNoContent, ""), nil
 	}))
-	defer upstream.Close()
 
-	statuses := CheckRoutes([]Route{{Name: "api", URL: upstream.URL}}, time.Second)
+	statuses := CheckRoutes([]Route{{Name: "api", URL: "http://api.test"}}, time.Second)
 	if len(statuses) != 1 {
 		t.Fatalf("expected 1 status, got %d", len(statuses))
 	}
@@ -43,26 +46,44 @@ func TestCheckRoutesReportsHealthyTarget(t *testing.T) {
 	}
 }
 
-func TestCheckRoutesFallsBackToGetWhenHeadNotAllowed(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodHead {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer upstream.Close()
+func TestRouteNamesFiltersByPrefix(t *testing.T) {
+	names := RouteNames([]Route{
+		{Name: "admin", URL: "http://127.0.0.1:9000"},
+		{Name: "api", URL: "http://127.0.0.1:3000"},
+		{Name: "docs", URL: "http://127.0.0.1:4321/base"},
+	}, "a")
+	if got := strings.Join(names, ","); got != "admin,api" {
+		t.Fatalf("unexpected names: %q", got)
+	}
+}
 
-	statuses := CheckRoutes([]Route{{Name: "docs", URL: upstream.URL}}, time.Second)
+func TestCheckRoutesFallsBackToGetWhenHeadNotAllowed(t *testing.T) {
+	var requests []string
+	withHTTPClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests = append(requests, req.Method)
+		if req.Method == http.MethodHead {
+			return response(req, http.StatusMethodNotAllowed, ""), nil
+		}
+		return response(req, http.StatusOK, ""), nil
+	}))
+
+	statuses := CheckRoutes([]Route{{Name: "docs", URL: "http://docs.test"}}, time.Second)
 	if len(statuses) != 1 {
 		t.Fatalf("expected 1 status, got %d", len(statuses))
 	}
 	if !statuses[0].OK || statuses[0].StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status: %#v", statuses[0])
 	}
+	if got := strings.Join(requests, ","); got != "HEAD,GET" {
+		t.Fatalf("unexpected probe sequence: %q", got)
+	}
 }
 
 func TestCheckRoutesReportsUnreachableTarget(t *testing.T) {
+	withHTTPClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("dial tcp 127.0.0.1:1: connect: connection refused")
+	}))
+
 	statuses := CheckRoutes([]Route{{Name: "dead", URL: "http://127.0.0.1:1"}}, 50*time.Millisecond)
 	if len(statuses) != 1 {
 		t.Fatalf("expected 1 status, got %d", len(statuses))
@@ -76,14 +97,21 @@ func TestCheckRoutesReportsUnreachableTarget(t *testing.T) {
 }
 
 func TestServerHandlerRoutesByPrefix(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, r.URL.Path+"?"+r.URL.RawQuery+"|"+r.Header.Get("X-Forwarded-Prefix"))
-	}))
-	defer upstream.Close()
+	var seenPath string
+	var seenQuery string
+	var seenPrefix string
+	var seenHost string
 
 	server := &Server{
 		Addr:   "127.0.0.1:7777",
-		Routes: []Route{{Name: "api", URL: upstream.URL + "/base"}},
+		Routes: []Route{{Name: "api", URL: "http://upstream.test/base"}},
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			seenPath = req.URL.Path
+			seenQuery = req.URL.RawQuery
+			seenPrefix = req.Header.Get("X-Forwarded-Prefix")
+			seenHost = req.Host
+			return response(req, http.StatusOK, req.URL.Path+"?"+req.URL.RawQuery+"|"+seenPrefix), nil
+		}),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users?id=42", nil)
@@ -97,6 +125,9 @@ func TestServerHandlerRoutesByPrefix(t *testing.T) {
 	if !strings.Contains(got, "/base/users?id=42|/api") {
 		t.Fatalf("unexpected proxy output: %q", got)
 	}
+	if seenPath != "/base/users" || seenQuery != "id=42" || seenPrefix != "/api" || seenHost != "upstream.test" {
+		t.Fatalf("unexpected proxy request: path=%q query=%q prefix=%q host=%q", seenPath, seenQuery, seenPrefix, seenHost)
+	}
 }
 
 func TestIndexIncludesRoutes(t *testing.T) {
@@ -106,5 +137,33 @@ func TestIndexIncludesRoutes(t *testing.T) {
 	server.Handler().ServeHTTP(rec, req)
 	if !strings.Contains(rec.Body.String(), "/web/ -> http://127.0.0.1:3000") {
 		t.Fatalf("index missing route: %q", rec.Body.String())
+	}
+}
+
+func withHTTPClient(t *testing.T, transport http.RoundTripper) {
+	t.Helper()
+
+	previous := newHTTPClient
+	newHTTPClient = func(timeout time.Duration) *http.Client {
+		return &http.Client{Timeout: timeout, Transport: transport}
+	}
+	t.Cleanup(func() {
+		newHTTPClient = previous
+	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func response(req *http.Request, status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Status:     http.StatusText(status),
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
 	}
 }

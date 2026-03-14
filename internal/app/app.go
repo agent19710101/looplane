@@ -16,6 +16,10 @@ import (
 	"time"
 )
 
+var newHTTPClient = func(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout}
+}
+
 type Route struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
@@ -142,8 +146,19 @@ func FindRoute(routes []Route, name string) (Route, bool) {
 	return Route{}, false
 }
 
+func RouteNames(routes []Route, prefix string) []string {
+	names := make([]string, 0, len(routes))
+	for _, route := range routes {
+		if prefix != "" && !strings.HasPrefix(route.Name, prefix) {
+			continue
+		}
+		names = append(names, route.Name)
+	}
+	return names
+}
+
 func CheckRoutes(routes []Route, timeout time.Duration) []RouteStatus {
-	client := &http.Client{Timeout: timeout}
+	client := newHTTPClient(timeout)
 	statuses := make([]RouteStatus, 0, len(routes))
 	for _, route := range routes {
 		statuses = append(statuses, checkRoute(client, route))
@@ -202,9 +217,10 @@ func probeRoute(client *http.Client, method string, rawURL string) (int, error) 
 }
 
 type Server struct {
-	Addr   string
-	Routes []Route
-	Stdout io.Writer
+	Addr      string
+	Routes    []Route
+	Stdout    io.Writer
+	Transport http.RoundTripper
 }
 
 func (s *Server) Handler() http.Handler {
@@ -234,6 +250,9 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		proxy := httputil.NewSingleHostReverseProxy(target)
+		if s.Transport != nil {
+			proxy.Transport = s.Transport
+		}
 		originalDirector := proxy.Director
 		proxy.Director = func(req *http.Request) {
 			originalDirector(req)

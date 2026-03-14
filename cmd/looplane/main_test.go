@@ -117,6 +117,9 @@ func TestRunCompletionBash(t *testing.T) {
 	if !strings.Contains(stdout, "devport-radar") {
 		t.Fatalf("bash completion missing import source: %s", stdout)
 	}
+	if !strings.Contains(stdout, "looplane __complete routes") {
+		t.Fatalf("bash completion missing direct route completion: %s", stdout)
+	}
 }
 
 func TestRunCompletionFish(t *testing.T) {
@@ -136,6 +139,35 @@ func TestRunCompletionRejectsUnsupportedShell(t *testing.T) {
 	_, _, err := captureRunOutput([]string{"completion", "nushell"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported shell") {
 		t.Fatalf("expected unsupported shell error, got %v", err)
+	}
+}
+
+func TestRunCompleteRoutesUsesStoreAndPrefix(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	if err := run([]string{"add", "api", "http://127.0.0.1:3000"}); err != nil {
+		t.Fatalf("add api: %v", err)
+	}
+	if err := run([]string{"add", "docs", "http://127.0.0.1:4321/base"}); err != nil {
+		t.Fatalf("add docs: %v", err)
+	}
+	if err := run([]string{"add", "admin", "http://127.0.0.1:9000"}); err != nil {
+		t.Fatalf("add admin: %v", err)
+	}
+
+	stdout, stderr, err := captureRunOutput([]string{"__complete", "routes", "a"})
+	if err != nil {
+		t.Fatalf("__complete routes: %v\nstderr=%s", err, stderr)
+	}
+	if got := strings.TrimSpace(stdout); got != "admin\napi" {
+		t.Fatalf("unexpected completion output: %q", got)
+	}
+}
+
+func TestRunCompleteRoutesRejectsUnknownTarget(t *testing.T) {
+	_, _, err := captureRunOutput([]string{"__complete", "shells"})
+	if err == nil || !strings.Contains(err.Error(), "unknown completion target") {
+		t.Fatalf("expected unknown completion target error, got %v", err)
 	}
 }
 

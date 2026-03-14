@@ -207,6 +207,8 @@ func run(args []string) error {
 		}
 		fmt.Print(script)
 		return nil
+	case "__complete":
+		return runCompletion(store, args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -246,6 +248,32 @@ Examples:
 `)
 }
 
+func runCompletion(store *app.Store, args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: looplane __complete routes [PREFIX]")
+	}
+	switch args[0] {
+	case "routes":
+		prefix := ""
+		if len(args) > 2 {
+			return errors.New("usage: looplane __complete routes [PREFIX]")
+		}
+		if len(args) == 2 {
+			prefix = args[1]
+		}
+		routes, err := store.Load()
+		if err != nil {
+			return err
+		}
+		for _, name := range app.RouteNames(routes, prefix) {
+			fmt.Println(name)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown completion target %q", args[0])
+	}
+}
+
 func completionScript(shell string) (string, error) {
 	switch shell {
 	case "bash":
@@ -267,7 +295,7 @@ _looplane() {
             ;;
         open|rm)
             local routes
-            routes=$(looplane ls --json 2>/dev/null | sed -n 's/.*"name": "\([^"]*\)".*/\1/p')
+            routes=$(looplane __complete routes "$cur" 2>/dev/null)
             COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
             return
             ;;
@@ -291,7 +319,7 @@ _looplane() {
                 return
             fi
             local routes
-            routes=$(looplane ls --json 2>/dev/null | sed -n 's/.*"name": "\([^"]*\)".*/\1/p')
+            routes=$(looplane __complete routes "$cur" 2>/dev/null)
             COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
             ;;
         import)
@@ -310,7 +338,7 @@ complete -F _looplane looplane
 
 _looplane_routes() {
   local -a routes
-  routes=(${(f)"$(looplane ls --json 2>/dev/null | sed -n 's/.*"name": "\([^"]*\)".*/\1/p')"})
+  routes=(${(f)"$(looplane __complete routes "${PREFIX:-}" 2>/dev/null)"})
   _describe 'route' routes
 }
 
@@ -365,7 +393,7 @@ complete -c looplane -n '__fish_seen_subcommand_from serve open' -l addr -d 'Lis
 complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to devport-radar JSON' -r
 complete -c looplane -n '__fish_seen_subcommand_from import' -l replace -d 'Replace existing routes instead of merging'
 complete -c looplane -n '__fish_seen_subcommand_from completion' -f -a 'bash zsh fish powershell'
-complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane ls --json 2>/dev/null | string match -r ''"name": "([^"]+)"'' | string replace -r ''"name": "([^"]+)"'' ''$1'')'
+complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane __complete routes (commandline -ct) 2>/dev/null)'
 `, nil
 	case "powershell":
 		return `Register-ArgumentCompleter -Native -CommandName looplane -ScriptBlock {
@@ -376,9 +404,9 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane l
     $routeNames = @()
 
     try {
-        $routes = looplane ls --json 2>$null | ConvertFrom-Json
+        $routes = looplane __complete routes $wordToComplete 2>$null
         if ($routes) {
-            $routeNames = @($routes | ForEach-Object { $_.name })
+            $routeNames = @($routes)
         }
     } catch {}
 
