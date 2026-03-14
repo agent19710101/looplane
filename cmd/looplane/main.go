@@ -72,7 +72,7 @@ func run(args []string) error {
 		return nil
 	case "import":
 		if len(commandArgs) < 1 {
-			return errors.New("usage: looplane import [devport-radar|docker-ps] [--file PATH] [--replace] [--store PATH]")
+			return errors.New("usage: looplane import [devport-radar|docker-ps|docker-compose-ps] [--file PATH] [--replace] [--store PATH]")
 		}
 		fs := flag.NewFlagSet("import", flag.ContinueOnError)
 		file := fs.String("file", "", "path to import JSON input (default: stdin)")
@@ -101,8 +101,10 @@ func run(args []string) error {
 			result, err = app.ImportDevportRadarJSON(routes, input, app.ImportOptions{Replace: *replace})
 		case "docker-ps":
 			result, err = app.ImportDockerPSJSON(routes, input, app.ImportOptions{Replace: *replace})
+		case "docker-compose-ps":
+			result, err = app.ImportDockerComposePSJSON(routes, input, app.ImportOptions{Replace: *replace})
 		default:
-			return errors.New("usage: looplane import [devport-radar|docker-ps] [--file PATH] [--replace] [--store PATH]")
+			return errors.New("usage: looplane import [devport-radar|docker-ps|docker-compose-ps] [--file PATH] [--replace] [--store PATH]")
 		}
 		if err != nil {
 			return err
@@ -337,7 +339,7 @@ Usage:
   looplane add NAME URL [--store PATH]         Add or update a named upstream route
   looplane rm NAME [--store PATH]              Remove a route
   looplane import SOURCE [--file PATH] [--replace] [--store PATH]
-                                              Import routes from devport-radar or docker ps JSON
+                                              Import routes from devport-radar, docker ps, or docker compose ps JSON
   looplane ls [--check] [--json] [--timeout D] [--store PATH]
                                               List routes (optionally probe health)
   looplane serve [--addr A] [--host-suffix SUFFIX] [--tls-cert FILE --tls-key FILE] [--watch] [--store PATH]
@@ -353,6 +355,8 @@ Examples:
   looplane import devport-radar --file radar.json
   docker ps --format json > docker.jsonl
   looplane import docker-ps --file docker.jsonl
+  docker compose ps --format json > compose.json
+  looplane import docker-compose-ps --file compose.json
   looplane ls --check
   looplane ls --json
   looplane open api
@@ -454,7 +458,7 @@ _looplane() {
 
     case "${prev}" in
         import)
-            COMPREPLY=( $(compgen -W "devport-radar docker-ps" -- "$cur") )
+            COMPREPLY=( $(compgen -W "devport-radar docker-ps docker-compose-ps" -- "$cur") )
             return
             ;;
         completion)
@@ -491,7 +495,7 @@ _looplane() {
             COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
             ;;
         import)
-            COMPREPLY=( $(compgen -W "devport-radar docker-ps --file --replace --store" -- "$cur") )
+            COMPREPLY=( $(compgen -W "devport-radar docker-ps docker-compose-ps --file --replace --store" -- "$cur") )
             ;;
         completion)
             COMPREPLY=( $(compgen -W "bash zsh fish powershell" -- "$cur") )
@@ -551,7 +555,7 @@ _looplane() {
           _arguments '--addr[listen address]:address:' '--host-suffix[optional host-based routing suffix]:suffix:' '--https[print an HTTPS URL for TLS-enabled local proxy setups]' '--store[path to routes store]:file:_files'
           ;;
         import)
-          _arguments '1:source:(devport-radar docker-ps)' '--file[path to import JSON]:file:_files' '--replace[replace existing routes instead of merging]' '--store[path to routes store]:file:_files'
+          _arguments '1:source:(devport-radar docker-ps docker-compose-ps)' '--file[path to import JSON]:file:_files' '--replace[replace existing routes instead of merging]' '--store[path to routes store]:file:_files'
           ;;
         ls)
           _arguments '--check[probe upstream health for each route]' '--json[emit routes as JSON]' '--timeout[health check timeout]:duration:' '--store[path to routes store]:file:_files'
@@ -597,7 +601,7 @@ complete -c looplane -n '__fish_use_subcommand' -f -a 'open' -d 'Print stable ro
 complete -c looplane -n '__fish_use_subcommand' -f -a 'completion' -d 'Print shell completion script'
 complete -c looplane -n '__fish_use_subcommand' -f -a 'help' -d 'Show help'
 
-complete -c looplane -n '__fish_seen_subcommand_from import' -f -a 'devport-radar docker-ps'
+complete -c looplane -n '__fish_seen_subcommand_from import' -f -a 'devport-radar docker-ps docker-compose-ps'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l check -d 'Probe upstream health for each route'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l json -d 'Emit routes as JSON'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l timeout -d 'Health check timeout' -r
@@ -650,7 +654,7 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane _
 
     switch ($tokens[1]) {
         'import' {
-            @('devport-radar', 'docker-ps', '--file', '--replace', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('devport-radar', 'docker-ps', 'docker-compose-ps', '--file', '--replace', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }

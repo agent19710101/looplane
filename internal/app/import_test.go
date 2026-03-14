@@ -101,3 +101,40 @@ func TestImportDockerPSJSONHandlesArraysAndMultiplePorts(t *testing.T) {
 		t.Fatalf("expected second docker port route, got %#v", result.Routes)
 	}
 }
+
+func TestImportDockerComposePSJSONImportsPublishedPorts(t *testing.T) {
+	input := strings.NewReader(`[
+  {"Service":"api","Name":"demo-api-1","Publishers":[{"URL":"0.0.0.0","TargetPort":80,"PublishedPort":8080,"Protocol":"tcp"}]},
+  {"Service":"grafana","Name":"demo-grafana-1","Publishers":[{"URL":"127.0.0.1","TargetPort":3000,"PublishedPort":3001,"Protocol":"tcp"}]},
+  {"Service":"db","Name":"demo-db-1","Publishers":null}
+]`)
+
+	result, err := ImportDockerComposePSJSON(nil, input, ImportOptions{})
+	if err != nil {
+		t.Fatalf("ImportDockerComposePSJSON: %v", err)
+	}
+	if result.Added != 2 || result.Updated != 0 || result.Skipped != 1 {
+		t.Fatalf("unexpected compose import summary: %#v", result)
+	}
+	if route, ok := FindRoute(result.Routes, "api"); !ok || route.URL != "http://127.0.0.1:8080" {
+		t.Fatalf("expected api route, got %#v", result.Routes)
+	}
+	if route, ok := FindRoute(result.Routes, "grafana"); !ok || route.URL != "http://127.0.0.1:3001" {
+		t.Fatalf("expected grafana route, got %#v", result.Routes)
+	}
+}
+
+func TestImportDockerComposePSJSONHandlesSingleObjectAndMultiplePorts(t *testing.T) {
+	input := strings.NewReader(`{"Service":"traefik","Name":"demo-traefik-1","Publishers":[{"PublishedPort":80},{"PublishedPort":443}]}`)
+
+	result, err := ImportDockerComposePSJSON(nil, input, ImportOptions{})
+	if err != nil {
+		t.Fatalf("ImportDockerComposePSJSON: %v", err)
+	}
+	if _, ok := FindRoute(result.Routes, "traefik"); !ok {
+		t.Fatalf("expected first compose port to keep base name: %#v", result.Routes)
+	}
+	if route, ok := FindRoute(result.Routes, "traefik-443"); !ok || route.URL != "http://127.0.0.1:443" {
+		t.Fatalf("expected second compose port route, got %#v", result.Routes)
+	}
+}

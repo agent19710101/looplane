@@ -46,7 +46,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - List routes with `looplane ls`
 - JSON output for scripts and agents with `looplane ls --json`
 - Stable flat health-check JSON with `looplane ls --json --check`
-- Import routes from `devport-radar --json` or `docker ps --format json`
+- Import routes from `devport-radar --json`, `docker ps --format json`, or `docker compose ps --format json`
 - Optional health checks with `looplane ls --check` (2xx/3xx healthy, 4xx/5xx surfaced as errors)
 - Remove routes with `looplane rm`
 - Print stable route URLs with `looplane open NAME`
@@ -93,6 +93,8 @@ devport-radar --json > radar.json
 looplane import devport-radar --file radar.json
 docker ps --format json > docker.jsonl
 looplane import docker-ps --file docker.jsonl
+docker compose ps --format json > compose.json
+looplane import docker-compose-ps --file compose.json
 looplane ls --check
 looplane ls --json
 looplane open api
@@ -103,7 +105,7 @@ looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me
 
 While `looplane serve --watch` is running, later `add`, `rm`, and `import` changes are picked up on the next request, so you do not need to restart the proxy to refresh the route map.
 
-### Docker import
+### Docker and Compose import
 
 If part of your local stack already runs in containers, `looplane` can import the published host ports from `docker ps --format json` output (JSON lines or a JSON array):
 
@@ -114,6 +116,16 @@ looplane ls
 ```
 
 Imported Docker routes use the container name when available, fall back to the image name if needed, and map published ports to `http://127.0.0.1:PORT`. Containers without published host ports are skipped.
+
+For Compose-backed stacks, point `looplane` at `docker compose ps --format json` output:
+
+```bash
+docker compose ps --format json > compose.json
+looplane import docker-compose-ps --file compose.json
+looplane ls
+```
+
+Compose imports use the Compose service name when available, fall back to the container name if needed, and keep the same deterministic conflict handling as the other import sources.
 
 ### Shared route config
 
@@ -203,13 +215,13 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` and Docker `docker ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
-- #9: import from additional local stack scanners, starting with Compose/Kubernetes-friendly sources
 - #10: add a minimal terminal dashboard for route health and quick actions
-- #11: local HTTPS/dev-cert helpers for host-based local routing
+- follow #9 with a Kubernetes-friendly import path after Compose coverage
+- consider lightweight dev-cert generation helpers on top of the existing `--tls-cert` / `--tls-key` flow
 
 ## Minimal release plan
 
@@ -220,11 +232,11 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 - documented an `mkcert`-friendly workflow instead of adding heavy built-in cert management
 - added regression coverage for HTTPS URL printing, TLS index output, completion flags, and invalid half-config rejection
 
-### v0.11.x — broader local-stack import coverage
+### v0.11.0 — Compose import coverage
 
-- land issue #9 with at least one more high-value import source beyond `devport-radar` and Docker
-- keep stdin/file ergonomics, deterministic naming, and conflict handling consistent across import paths
-- update docs around "discover first, then pin stable names"
+- land issue #9 with `docker compose ps --format json` import support
+- keep stdin/file ergonomics, deterministic naming, and conflict handling consistent with existing import paths
+- document the “discover first, then pin stable names” Compose workflow
 
 ### v0.12.x — operator UX
 

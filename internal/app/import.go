@@ -37,6 +37,20 @@ type DockerPSContainer struct {
 	Ports string `json:"Ports"`
 }
 
+type DockerComposePSService struct {
+	Name       string                   `json:"Name"`
+	Service    string                   `json:"Service"`
+	Project    string                   `json:"Project"`
+	Publishers []DockerComposePublisher `json:"Publishers"`
+}
+
+type DockerComposePublisher struct {
+	URL           string `json:"URL"`
+	TargetPort    int    `json:"TargetPort"`
+	PublishedPort int    `json:"PublishedPort"`
+	Protocol      string `json:"Protocol"`
+}
+
 func ImportDevportRadarJSON(existing []Route, r io.Reader, opts ImportOptions) (ImportResult, error) {
 	var services []DevportRadarService
 	if err := json.NewDecoder(r).Decode(&services); err != nil {
@@ -187,6 +201,64 @@ func ImportDockerPSJSON(existing []Route, r io.Reader, opts ImportOptions) (Impo
 	return result, nil
 }
 
+func ImportDockerComposePSJSON(existing []Route, r io.Reader, opts ImportOptions) (ImportResult, error) {
+	services, err := decodeDockerComposePSServices(r)
+	if err != nil {
+		return ImportResult{}, err
+	}
+
+	routesByName := make(map[string]Route, len(existing))
+	for _, route := range existing {
+		routesByName[route.Name] = route
+	}
+	if opts.Replace {
+		routesByName = map[string]Route{}
+	}
+
+	result := ImportResult{}
+	usedNames := make(map[string]struct{}, len(routesByName))
+	for name := range routesByName {
+		usedNames[name] = struct{}{}
+	}
+
+	for _, service := range services {
+		ports := publishedDockerComposePorts(service.Publishers)
+		if len(ports) == 0 {
+			result.Skipped++
+			continue
+		}
+		base := sanitizeImportName(firstNonEmpty(service.Service, service.Name))
+		if base == "" {
+			base = "compose"
+		}
+		for i, port := range ports {
+			nameBase := base
+			if i > 0 {
+				nameBase = fmt.Sprintf("%s-%d", base, port)
+			}
+			name := uniqueImportRouteName(nameBase, port, usedNames)
+			route := Route{Name: name, URL: (&url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(port))}).String()}
+			if prev, ok := routesByName[name]; ok {
+				if prev.URL == route.URL {
+					continue
+				}
+				result.Updated++
+			} else {
+				result.Added++
+			}
+			routesByName[name] = route
+			usedNames[name] = struct{}{}
+		}
+	}
+
+	result.Routes = make([]Route, 0, len(routesByName))
+	for _, route := range routesByName {
+		result.Routes = append(result.Routes, route)
+	}
+	sort.Slice(result.Routes, func(i, j int) bool { return result.Routes[i].Name < result.Routes[j].Name })
+	return result, nil
+}
+
 func decodeDockerPSContainers(r io.Reader) ([]DockerPSContainer, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -223,6 +295,30 @@ func decodeDockerPSContainers(r io.Reader) ([]DockerPSContainer, error) {
 	return containers, nil
 }
 
+func decodeDockerComposePSServices(r io.Reader) ([]DockerComposePSService, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("read docker compose ps json: %w", err)
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return nil, nil
+	}
+	if trimmed[0] == '[' {
+		var services []DockerComposePSService
+		if err := json.Unmarshal(trimmed, &services); err != nil {
+			return nil, fmt.Errorf("decode docker compose ps json: %w", err)
+		}
+		return services, nil
+	}
+
+	var service DockerComposePSService
+	if err := json.Unmarshal(trimmed, &service); err != nil {
+		return nil, fmt.Errorf("decode docker compose ps json: %w", err)
+	}
+	return []DockerComposePSService{service}, nil
+}
+
 func publishedDockerPorts(raw string) []int {
 	seen := map[int]struct{}{}
 	ports := []int{}
@@ -237,6 +333,24 @@ func publishedDockerPorts(raw string) []int {
 		}
 		port, err := strconv.Atoi(hostPart)
 		if err != nil || port <= 0 {
+			continue
+		}
+		if _, ok := seen[port]; ok {
+			continue
+		}
+		seen[port] = struct{}{}
+		ports = append(ports, port)
+	}
+	sort.Ints(ports)
+	return ports
+}
+
+func publishedDockerComposePorts(publishers []DockerComposePublisher) []int {
+	seen := map[int]struct{}{}
+	ports := []int{}
+	for _, publisher := range publishers {
+		port := publisher.PublishedPort
+		if port <= 0 {
 			continue
 		}
 		if _, ok := seen[port]; ok {
