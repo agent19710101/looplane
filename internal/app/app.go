@@ -21,6 +21,11 @@ var newHTTPClient = func(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout}
 }
 
+var (
+	osCreateTemp = os.CreateTemp
+	osRename     = os.Rename
+)
+
 type Route struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
@@ -85,10 +90,39 @@ func (s *Store) Save(routes []Route) error {
 	if err != nil {
 		return fmt.Errorf("encode routes: %w", err)
 	}
-	if err := os.WriteFile(s.path, append(payload, '\n'), 0o644); err != nil {
+	if err := writeFileAtomic(s.path, append(payload, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write routes: %w", err)
 	}
 	return nil
+}
+
+func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
+	dir := filepath.Dir(path)
+	file, err := osCreateTemp(dir, filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := file.Name()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tmpPath)
+			_ = file.Close()
+		}
+	}()
+
+	if _, err = file.Write(data); err != nil {
+		return err
+	}
+	if err = file.Chmod(mode); err != nil {
+		return err
+	}
+	if err = file.Sync(); err != nil {
+		return err
+	}
+	if err = file.Close(); err != nil {
+		return err
+	}
+	return osRename(tmpPath, path)
 }
 
 func ValidateRoute(name string, rawURL string) (Route, error) {

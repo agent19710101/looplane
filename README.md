@@ -111,7 +111,7 @@ looplane open api --store ./.looplane/routes.json
 looplane serve --store ./.looplane/routes.json --watch
 ```
 
-This keeps the single-user default simple while making shared route maps explicit and portable. Shell completions for `looplane open` and `looplane rm` now use the same shared store when `--store PATH` is present on the command line.
+This keeps the single-user default simple while making shared route maps explicit and portable. Shell completions for `looplane open` and `looplane rm` now use the same shared store when `--store PATH` is present on the command line, and route-store updates are written atomically so an interrupted save does not clobber the last valid JSON file.
 
 Then open:
 
@@ -159,7 +159,7 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, and watch-mode route reloads for a running proxy are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. GitHub Actions now runs `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. GitHub Actions now runs `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
@@ -169,17 +169,17 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 
 ## Minimal release plan
 
-### v0.7.0 — host-based local routing
+### v0.7.1 — atomic route-store writes
 
-- added optional `looplane serve --host-suffix localtest.me` routing for URLs like `http://api.localtest.me:7777/`
-- taught `looplane open --host-suffix ...` and shell completions about the new host-based workflow
-- added regression coverage for host-based proxy resolution and README examples for both path and host routing
+- route-store updates now write through a temp file and replace the destination atomically
+- failed writes no longer clobber the last valid `routes.json`, which matters more for shared `--store PATH` workflows and `serve --watch`
+- added regression coverage for atomic-save failure handling and temp-file cleanup
 
 ### Next up
 
+- stabilize the `ls --json --check` schema for automation consumers
+- expand CI beyond `go test` with formatting and static analysis checks
 - import from additional local scanner formats
-- TUI dashboard for route health + quick switching
-- evaluate whether host-based routing needs HTTPS/dev-cert helpers later
 
 ## Development
 

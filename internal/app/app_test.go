@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -265,5 +267,56 @@ func TestIndexIncludesHostBasedURLs(t *testing.T) {
 	server.Handler().ServeHTTP(rec, req)
 	if !strings.Contains(rec.Body.String(), "http://web.localtest.me:7777/ -> http://127.0.0.1:3000") {
 		t.Fatalf("index missing host-based route: %q", rec.Body.String())
+	}
+}
+
+func TestStoreSaveWritesAtomically(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "team", "routes.json")
+	store := NewStore(storePath)
+
+	if err := store.Save([]Route{{Name: "api", URL: "http://127.0.0.1:3000"}}); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+	before, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("read initial store: %v", err)
+	}
+
+	tempGlobs := []string{}
+	previousCreateTemp := osCreateTemp
+	osCreateTemp = func(dir string, pattern string) (*os.File, error) {
+		file, err := previousCreateTemp(dir, pattern)
+		if err == nil {
+			tempGlobs = append(tempGlobs, file.Name())
+		}
+		return file, err
+	}
+	t.Cleanup(func() { osCreateTemp = previousCreateTemp })
+
+	previousRename := osRename
+	osRename = func(oldPath string, newPath string) error {
+		return errors.New("simulated rename failure")
+	}
+	t.Cleanup(func() { osRename = previousRename })
+
+	err = store.Save([]Route{{Name: "docs", URL: "http://127.0.0.1:4321"}})
+	if err == nil || !strings.Contains(err.Error(), "simulated rename failure") {
+		t.Fatalf("expected rename failure, got %v", err)
+	}
+
+	after, err := os.ReadFile(storePath)
+	if err != nil {
+		t.Fatalf("read store after failed atomic save: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("atomic save should preserve previous file on failure\nbefore=%s\nafter=%s", before, after)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(storePath), filepath.Base(storePath)+".*.tmp"))
+	if err != nil {
+		t.Fatalf("glob temp files: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected temp files to be cleaned up, found %v", matches)
 	}
 }
