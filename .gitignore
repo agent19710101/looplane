@@ -1,0 +1,6 @@
+looplane
+coverage.out
+*.log
+.DS_Store
+.tmpdemo/
+.tmpcfg/
