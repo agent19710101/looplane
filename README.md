@@ -135,6 +135,26 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 - TUI dashboard for route health + quick switching
 - optional host-based routing (`api.localtest.me` style)
 
+## Minimal release plan
+
+### v0.5.0 — interactive polish
+
+- hot-reload served routes without restarting `looplane serve`
+- complete test coverage for zsh + PowerShell completion output
+- keep the default branch releaseable with `go test ./...` green
+
+### v0.6.0 — team/shared workflow
+
+- add CI coverage for pushes, PRs, and tagged releases
+- support shared route config files plus optional watch mode
+- document the single-user vs shared-route workflow clearly
+
+### v0.7.0 — broader local routing surface
+
+- import from additional local scanner formats
+- optional host-based routing (`api.localtest.me` style)
+- evaluate whether a TUI dashboard is still the best next UX layer
+
 ## Development
 
 ```bash
