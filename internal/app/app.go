@@ -13,11 +13,19 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Route struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+}
+
+type RouteStatus struct {
+	Route      Route
+	OK         bool
+	StatusCode int
+	Message    string
 }
 
 type Store struct {
@@ -132,6 +140,65 @@ func FindRoute(routes []Route, name string) (Route, bool) {
 		}
 	}
 	return Route{}, false
+}
+
+func CheckRoutes(routes []Route, timeout time.Duration) []RouteStatus {
+	client := &http.Client{Timeout: timeout}
+	statuses := make([]RouteStatus, 0, len(routes))
+	for _, route := range routes {
+		statuses = append(statuses, checkRoute(client, route))
+	}
+	return statuses
+}
+
+func checkRoute(client *http.Client, route Route) RouteStatus {
+	status := RouteStatus{Route: route}
+	statusCode, err := probeRoute(client, http.MethodHead, route.URL)
+	if err == nil {
+		status.OK = true
+		status.StatusCode = statusCode
+		status.Message = fmt.Sprintf("ok (%d)", statusCode)
+		return status
+	}
+	if statusCode == http.StatusMethodNotAllowed {
+		statusCode, err = probeRoute(client, http.MethodGet, route.URL)
+		if err == nil {
+			status.OK = true
+			status.StatusCode = statusCode
+			status.Message = fmt.Sprintf("ok (%d)", statusCode)
+			return status
+		}
+	}
+	if statusCode != 0 {
+		status.StatusCode = statusCode
+		status.Message = fmt.Sprintf("error (%d)", statusCode)
+	} else {
+		status.Message = fmt.Sprintf("down (%v)", err)
+	}
+	return status
+}
+
+func probeRoute(client *http.Client, method string, rawURL string) (int, error) {
+	req, err := http.NewRequest(method, rawURL, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+		return resp.StatusCode, nil
+	}
+	if resp.StatusCode == http.StatusMethodNotAllowed {
+		return resp.StatusCode, fmt.Errorf("upstream returned %s", resp.Status)
+	}
+	if resp.StatusCode < 500 {
+		return resp.StatusCode, nil
+	}
+	return resp.StatusCode, fmt.Errorf("upstream returned %s", resp.Status)
 }
 
 type Server struct {

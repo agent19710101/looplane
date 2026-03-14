@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/agent19710101/looplane/internal/app"
 )
@@ -67,6 +69,12 @@ func run(args []string) error {
 		fmt.Printf("removed route %s\n", args[1])
 		return nil
 	case "ls":
+		fs := flag.NewFlagSet("ls", flag.ContinueOnError)
+		check := fs.Bool("check", false, "probe upstream health for each route")
+		timeout := fs.Duration("timeout", 2*time.Second, "health check timeout (used with --check)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
 		routes, err := store.Load()
 		if err != nil {
 			return err
@@ -75,11 +83,19 @@ func run(args []string) error {
 			fmt.Println("no routes configured")
 			return nil
 		}
-		fmt.Println("NAME\tTARGET")
-		for _, route := range routes {
-			fmt.Printf("%s\t%s\n", route.Name, route.URL)
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		if *check {
+			fmt.Fprintln(w, "NAME\tTARGET\tSTATUS")
+			for _, status := range app.CheckRoutes(routes, *timeout) {
+				fmt.Fprintf(w, "%s\t%s\t%s\n", status.Route.Name, status.Route.URL, status.Message)
+			}
+		} else {
+			fmt.Fprintln(w, "NAME\tTARGET")
+			for _, route := range routes {
+				fmt.Fprintf(w, "%s\t%s\n", route.Name, route.URL)
+			}
 		}
-		return nil
+		return w.Flush()
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 		addr := fs.String("addr", "127.0.0.1:7777", "listen address")
@@ -118,15 +134,16 @@ func printUsage() {
 	fmt.Print(`looplane keeps stable names for flaky local dev ports.
 
 Usage:
-  looplane add NAME URL      Add or update a named upstream route
-  looplane rm NAME           Remove a route
-  looplane ls                List routes
-  looplane serve [--addr A]  Start reverse proxy (default 127.0.0.1:7777)
-  looplane open ADDR NAME    Print the stable URL for a route
+  looplane add NAME URL                Add or update a named upstream route
+  looplane rm NAME                     Remove a route
+  looplane ls [--check] [--timeout D]  List routes (optionally probe health)
+  looplane serve [--addr A]            Start reverse proxy (default 127.0.0.1:7777)
+  looplane open ADDR NAME              Print the stable URL for a route
 
 Examples:
   looplane add api http://127.0.0.1:3000
   looplane add docs http://127.0.0.1:4321/base
+  looplane ls --check
   looplane serve --addr 127.0.0.1:7777
   curl http://127.0.0.1:7777/api/healthz
 `)

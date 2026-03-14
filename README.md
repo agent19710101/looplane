@@ -16,6 +16,17 @@ Then `looplane serve` exposes stable local URLs like:
 - `http://127.0.0.1:7777/docs/`
 - `http://127.0.0.1:7777/grafana/`
 
+## Problem
+
+Modern local dev stacks are messy:
+
+- frontend dev servers jump between ports
+- docs and dashboards live on different base paths
+- scripts and prompts hardcode yesterday's URL
+- humans remember names faster than ports
+
+`looplane` gives those moving local services a tiny, stable naming layer.
+
 ## Why now
 
 The current OSS wave is full of agent-native tooling, local orchestration, and better terminal UX. We already have great tools for:
@@ -28,11 +39,12 @@ What is still oddly manual is the last mile: **giving those local services stabl
 
 `looplane` focuses on that narrow pain point.
 
-## Features in v0
+## Features
 
 - Add/update named routes with `looplane add`
 - Persist routes in `~/.config/looplane/routes.json`
 - List routes with `looplane ls`
+- Optional health checks with `looplane ls --check`
 - Remove routes with `looplane rm`
 - Start a local reverse proxy with `looplane serve`
 - Path-prefix routing (`/api/...`, `/docs/...`)
@@ -51,7 +63,7 @@ go install github.com/agent19710101/looplane/cmd/looplane@latest
 ```bash
 looplane add api http://127.0.0.1:3000
 looplane add docs http://127.0.0.1:4321/base
-looplane ls
+looplane ls --check
 looplane serve --addr 127.0.0.1:7777
 ```
 
@@ -66,10 +78,10 @@ curl http://127.0.0.1:7777/docs/
 ## Example output
 
 ```text
-$ looplane ls
-NAME    TARGET
-api     http://127.0.0.1:3000
-docs    http://127.0.0.1:4321/base
+$ looplane ls --check
+NAME  TARGET                         STATUS
+api   http://127.0.0.1:3000          ok (200)
+docs  http://127.0.0.1:4321/base     ok (200)
 
 $ looplane serve --addr 127.0.0.1:7777
 looplane listening on http://127.0.0.1:7777
@@ -77,14 +89,23 @@ looplane listening on http://127.0.0.1:7777
 - http://127.0.0.1:7777/docs/ -> http://127.0.0.1:4321/base
 ```
 
+## Status
+
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks landed in the first post-v0 iteration.
+
 ## Roadmap
 
-- health checks and route status in `looplane ls`
 - import from local scanners like `devport-radar`
 - optional file-watch mode for shared team route config
 - shell completions
 - TUI dashboard for route health + quick switching
 - optional host-based routing (`api.localtest.me` style)
+
+## Development
+
+```bash
+go test ./...
+```
 
 ## License
 
