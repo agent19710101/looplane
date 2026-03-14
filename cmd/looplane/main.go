@@ -316,6 +316,9 @@ func hostRouteURL(addr string, routeName string, hostSuffix string, scheme strin
 	if hostSuffix == "" {
 		return "", errors.New("host suffix is required")
 	}
+	if !app.IsDNSLabel(routeName) {
+		return "", fmt.Errorf("route %s is not valid for host-based routing: use lowercase letters, numbers, and hyphens only", routeName)
+	}
 	host := strings.TrimSpace(addr)
 	if strings.Contains(host, "://") {
 		return "", errors.New("addr should be host:port, not a full URL")

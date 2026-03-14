@@ -54,7 +54,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Store-backed route-name completion for `looplane open` and `looplane rm`
 - Optional shared route config via `--store PATH` across route and serve commands
 - Start a local reverse proxy with `looplane serve`
-- Optional host-based routing with `looplane serve --host-suffix localtest.me`
+- Optional host-based routing with `looplane serve --host-suffix localtest.me` for DNS-safe route names
 - Optional local HTTPS termination with `looplane serve --tls-cert ... --tls-key ...`
 - Live-reload served routes when the selected store changes
 - Path-prefix routing (`/api/...`, `/docs/...`)
@@ -161,6 +161,8 @@ looplane open api --host-suffix localtest.me
 
 With host-based routing enabled, requests for `api.localtest.me:7777` go straight to the `api` route root, so you can use hostnames instead of `/api/...` path prefixes when that fits your workflow better.
 
+Host-based routing intentionally uses a stricter route-name contract than path-based routing: the route name must already be DNS-safe (`a-z`, `0-9`, and `-`, with no leading/trailing `-`). Names with underscores still work for path-based URLs like `/api_v2/`, but `looplane open --host-suffix ...` and `looplane serve --host-suffix ...` now reject them instead of printing or serving misleading hostnames.
+
 ### Local HTTPS for host-based routing
 
 For browser flows that behave differently without TLS, `looplane` can terminate HTTPS locally when you already have a development certificate and key:
@@ -215,12 +217,14 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix` (for DNS-safe route names), optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
+- #12: forward host/proto headers so upstream apps generate correct canonical URLs behind looplane
+- #13: run CI tests in a cross-platform matrix before release
 - #10: add a minimal terminal dashboard for route health and quick actions
-- follow #9 with a Kubernetes-friendly import path after Compose coverage
+- consider a Kubernetes-friendly import path after the current proxy/correctness issues are closed
 - consider lightweight dev-cert generation helpers on top of the existing `--tls-cert` / `--tls-key` flow
 
 ## Minimal release plan
@@ -232,16 +236,21 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 - documented an `mkcert`-friendly workflow instead of adding heavy built-in cert management
 - added regression coverage for HTTPS URL printing, TLS index output, completion flags, and invalid half-config rejection
 
-### v0.11.0 — Compose import coverage
+### v0.11.1 — host-routing contract cleanup
 
-- land issue #9 with `docker compose ps --format json` import support
-- keep stdin/file ergonomics, deterministic naming, and conflict handling consistent with existing import paths
-- document the “discover first, then pin stable names” Compose workflow
+- reject non-DNS-safe route names when `--host-suffix` is used, instead of printing hostnames that browsers and certs cannot rely on
+- keep underscore-containing names available for path-based routing and imported route sets
+- document the host-routing constraint and cover it with regression tests
 
-### v0.12.x — operator UX
+### v0.12.0 — forwarded-header correctness
 
-- land issue #10 with a small TUI/dashboard for route health, stable URLs, and quick follow-up actions
-- keep the dashboard additive rather than replacing the core CLI/scriptable flow
+- land issue #12 so upstream apps receive `X-Forwarded-Host` and `X-Forwarded-Proto` alongside the existing prefix behavior
+- add regression coverage for path-based, host-based, HTTP, and TLS-enabled proxy modes
+
+### v0.13.x — release confidence + operator UX
+
+- land issue #13 with a small cross-platform CI matrix before release
+- follow with issue #10’s additive terminal dashboard for route health, stable URLs, and quick follow-up actions
 
 ## Development
 

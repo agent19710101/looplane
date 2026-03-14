@@ -162,6 +162,25 @@ func TestIndexIncludesRoutes(t *testing.T) {
 	}
 }
 
+func TestServerHandlerRejectsInvalidHostRouteNames(t *testing.T) {
+	server := &Server{
+		Addr:       "127.0.0.1:7777",
+		HostSuffix: "localtest.me",
+		Routes:     []Route{{Name: "api_v2", URL: "http://upstream.test"}},
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return response(req, http.StatusOK, "should not proxy"), nil
+		}),
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://api_v2.localtest.me:7777/users", nil)
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for invalid host route, got %d", rec.Code)
+	}
+}
+
 func TestServerHandlerReloadsRoutesWithoutRestart(t *testing.T) {
 	routes := []Route{{Name: "api", URL: "http://api-v1.test"}}
 	server := &Server{

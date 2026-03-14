@@ -44,6 +44,19 @@ func TestRunOpenSupportsCustomAddrFlag(t *testing.T) {
 	}
 }
 
+func TestRunOpenRejectsHostRoutingForUnderscoreNames(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	if err := run([]string{"add", "api_v2", "http://127.0.0.1:3000"}); err != nil {
+		t.Fatalf("add route: %v", err)
+	}
+
+	_, _, err := captureRunOutput([]string{"open", "api_v2", "--host-suffix", "localtest.me"})
+	if err == nil || !strings.Contains(err.Error(), "not valid for host-based routing") {
+		t.Fatalf("expected invalid host-routing error, got %v", err)
+	}
+}
+
 func TestRunOpenFailsForUnknownRoute(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 

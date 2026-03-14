@@ -278,6 +278,31 @@ func routesByName(routes []Route) map[string]Route {
 	return byName
 }
 
+func IsDNSLabel(name string) bool {
+	if name == "" {
+		return false
+	}
+	if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
+		return false
+	}
+	for _, r := range name {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func ValidateHostRoutingRoutes(routes []Route) error {
+	for _, route := range routes {
+		if !IsDNSLabel(route.Name) {
+			return fmt.Errorf("route %s is not valid for host-based routing: use lowercase letters, numbers, and hyphens only", route.Name)
+		}
+	}
+	return nil
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -358,7 +383,7 @@ func (s *Server) resolveRouteByHost(routes []Route, host string) (Route, bool) {
 		return Route{}, false
 	}
 	name := strings.TrimSuffix(host, "."+suffix)
-	if strings.Contains(name, ".") || name == "" {
+	if strings.Contains(name, ".") || name == "" || !IsDNSLabel(name) {
 		return Route{}, false
 	}
 	return FindRoute(routes, name)

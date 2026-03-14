@@ -48,6 +48,18 @@ func TestImportDevportRadarJSONDisambiguatesNames(t *testing.T) {
 	}
 }
 
+func TestImportDevportRadarJSONKeepsUnderscoreNamesForPathRouting(t *testing.T) {
+	input := strings.NewReader(`[{"port":3000,"protocol":"http","alias":"api_v2"}]`)
+
+	result, err := ImportDevportRadarJSON(nil, input, ImportOptions{})
+	if err != nil {
+		t.Fatalf("ImportDevportRadarJSON: %v", err)
+	}
+	if _, ok := FindRoute(result.Routes, "api_v2"); !ok {
+		t.Fatalf("expected underscore route name to remain available for path routing: %#v", result.Routes)
+	}
+}
+
 func TestImportDevportRadarJSONReplace(t *testing.T) {
 	existing := []Route{{Name: "old", URL: "http://127.0.0.1:9000"}}
 	input := strings.NewReader(`[{"port":8080,"protocol":"http","process":"api"}]`)
