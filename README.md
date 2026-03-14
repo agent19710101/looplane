@@ -228,45 +228,26 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix` (for DNS-safe route names), forwarded `X-Forwarded-Host`/`X-Forwarded-Proto`/`X-Forwarded-Prefix` headers for upstream canonical URL correctness, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions runs formatting checks, `go vet`, and `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar`, Docker `docker ps --format json`, and Docker Compose `docker compose ps --format json` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix` (for DNS-safe route names), forwarded `X-Forwarded-Host`/`X-Forwarded-Proto`/`X-Forwarded-Prefix` headers for upstream canonical URL correctness, optional local TLS termination via `--tls-cert`/`--tls-key`, watch-mode route reloads for a running proxy, and atomic route-store writes are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. `looplane ls --json --check` emits a flat lowercase schema for automation consumers. GitHub Actions now keeps formatting and `go vet` on Ubuntu while running `go test ./...` across Ubuntu, Windows, and macOS for pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
-- #13: run CI tests in a cross-platform matrix before release
 - #10: add a minimal terminal dashboard for route health and quick actions
 - consider a Kubernetes-friendly import path after the current proxy/correctness issues are closed
 - consider lightweight dev-cert generation helpers on top of the existing `--tls-cert` / `--tls-key` flow
 
 ## Minimal release plan
 
-### v0.10.0 — local HTTPS helpers
+### v0.12.1 — cross-platform release CI
 
-- `looplane serve` accepts `--tls-cert` and `--tls-key` for optional local HTTPS termination
-- `looplane open --https --host-suffix ...` prints stable HTTPS route URLs for TLS-enabled local proxy setups
-- documented an `mkcert`-friendly workflow instead of adding heavy built-in cert management
-- added regression coverage for HTTPS URL printing, TLS index output, completion flags, and invalid half-config rejection
+- moved `go test ./...` into an explicit GitHub Actions matrix across Ubuntu, Windows, and macOS
+- kept formatting and `go vet` on Ubuntu only so the release pipeline stays clear without duplicating lint-style work on every OS
+- applies the same split to pushes, pull requests, tags, and published releases so PowerShell/completion regressions are caught before cutting a version
 
-### v0.12.0 — forwarded canonical URL headers
+### v0.13.x — operator UX
 
-- `looplane serve` now forwards `X-Forwarded-Host` and `X-Forwarded-Proto` so upstream apps can generate correct absolute URLs, redirects, and callback targets
-- path-based proxying keeps forwarding `X-Forwarded-Prefix`, while host-based and TLS-backed flows now get the matching host/proto context too
-- added regression coverage for path-based HTTP and host-based HTTPS forwarded-header behavior
-
-### v0.11.1 — host-routing contract cleanup
-
-- reject non-DNS-safe route names when `--host-suffix` is used, instead of printing hostnames that browsers and certs cannot rely on
-- keep underscore-containing names available for path-based routing and imported route sets
-- document the host-routing constraint and cover it with regression tests
-
-### v0.12.0 — forwarded-header correctness
-
-- land issue #12 so upstream apps receive `X-Forwarded-Host` and `X-Forwarded-Proto` alongside the existing prefix behavior
-- add regression coverage for path-based, host-based, HTTP, and TLS-enabled proxy modes
-
-### v0.13.x — release confidence + operator UX
-
-- land issue #13 with a small cross-platform CI matrix before release
 - follow with issue #10’s additive terminal dashboard for route health, stable URLs, and quick follow-up actions
+- keep the dashboard intentionally small and dependency-light so the core CLI stays script-friendly
 
 ## Development
 

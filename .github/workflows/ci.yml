@@ -12,7 +12,7 @@ on:
       - published
 
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -28,6 +28,27 @@ jobs:
 
       - name: Run go vet
         run: go vet ./...
+
+      - name: Note Linux-only checks
+        run: echo "Formatting and go vet stay on Ubuntu only to avoid redundant matrix work."
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
       - name: Run test suite
         run: go test ./...
