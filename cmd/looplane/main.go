@@ -27,22 +27,22 @@ func run(args []string) error {
 		return nil
 	}
 
-	storePath, err := defaultStorePath()
+	command, storePath, commandArgs, err := resolveCommandStore(args)
 	if err != nil {
 		return err
 	}
 	store := app.NewStore(storePath)
 
-	switch args[0] {
+	switch command {
 	case "add":
-		if len(args) != 3 {
-			return errors.New("usage: looplane add NAME URL")
+		if len(commandArgs) != 2 {
+			return errors.New("usage: looplane add NAME URL [--store PATH]")
 		}
 		routes, err := store.Load()
 		if err != nil {
 			return err
 		}
-		route, err := app.ValidateRoute(args[1], args[2])
+		route, err := app.ValidateRoute(commandArgs[0], commandArgs[1])
 		if err != nil {
 			return err
 		}
@@ -53,30 +53,30 @@ func run(args []string) error {
 		fmt.Printf("saved route %s -> %s\n", route.Name, route.URL)
 		return nil
 	case "rm":
-		if len(args) != 2 {
-			return errors.New("usage: looplane rm NAME")
+		if len(commandArgs) != 1 {
+			return errors.New("usage: looplane rm NAME [--store PATH]")
 		}
 		routes, err := store.Load()
 		if err != nil {
 			return err
 		}
-		updated, removed := app.DeleteRoute(routes, args[1])
+		updated, removed := app.DeleteRoute(routes, commandArgs[0])
 		if !removed {
-			return fmt.Errorf("route %s not found", args[1])
+			return fmt.Errorf("route %s not found", commandArgs[0])
 		}
 		if err := store.Save(updated); err != nil {
 			return err
 		}
-		fmt.Printf("removed route %s\n", args[1])
+		fmt.Printf("removed route %s\n", commandArgs[0])
 		return nil
 	case "import":
-		if len(args) < 2 || args[1] != "devport-radar" {
-			return errors.New("usage: looplane import devport-radar [--file PATH] [--replace]")
+		if len(commandArgs) < 1 || commandArgs[0] != "devport-radar" {
+			return errors.New("usage: looplane import devport-radar [--file PATH] [--replace] [--store PATH]")
 		}
 		fs := flag.NewFlagSet("import", flag.ContinueOnError)
 		file := fs.String("file", "", "path to devport-radar --json output (default: stdin)")
 		replace := fs.Bool("replace", false, "replace existing routes instead of merging")
-		if err := fs.Parse(args[2:]); err != nil {
+		if err := fs.Parse(commandArgs[1:]); err != nil {
 			return err
 		}
 		var input *os.File
@@ -108,7 +108,7 @@ func run(args []string) error {
 		check := fs.Bool("check", false, "probe upstream health for each route")
 		jsonOut := fs.Bool("json", false, "emit routes as JSON for scripts and agents")
 		timeout := fs.Duration("timeout", 2*time.Second, "health check timeout (used with --check)")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := fs.Parse(commandArgs); err != nil {
 			return err
 		}
 		routes, err := store.Load()
@@ -151,14 +151,18 @@ func run(args []string) error {
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 		addr := fs.String("addr", "127.0.0.1:7777", "listen address")
-		if err := fs.Parse(args[1:]); err != nil {
+		watch := fs.Bool("watch", true, "reload routes from the selected store on each request")
+		if err := fs.Parse(commandArgs); err != nil {
 			return err
 		}
 		routes, err := store.Load()
 		if err != nil {
 			return err
 		}
-		srv := &app.Server{Addr: *addr, Routes: routes, LoadRoutes: store.Load, Stdout: os.Stdout}
+		srv := &app.Server{Addr: *addr, Routes: routes, Stdout: os.Stdout}
+		if *watch {
+			srv.LoadRoutes = store.Load
+		}
 		fmt.Printf("looplane listening on http://%s\n", *addr)
 		if len(routes) == 0 {
 			fmt.Println("tip: add routes with `looplane add NAME http://127.0.0.1:PORT`")
@@ -169,7 +173,7 @@ func run(args []string) error {
 		}
 		return http.ListenAndServe(*addr, srv.Handler())
 	case "open":
-		openArgs := args[1:]
+		openArgs := commandArgs
 		routeName := ""
 		if len(openArgs) > 0 && !strings.HasPrefix(openArgs[0], "-") {
 			routeName = strings.Trim(openArgs[0], "/")
@@ -198,22 +202,22 @@ func run(args []string) error {
 		fmt.Printf("http://%s/%s/\n", strings.TrimSuffix(*addr, "/"), routeName)
 		return nil
 	case "completion":
-		if len(args) != 2 {
+		if len(commandArgs) != 1 {
 			return errors.New("usage: looplane completion [bash|zsh|fish|powershell]")
 		}
-		script, err := completionScript(args[1])
+		script, err := completionScript(commandArgs[0])
 		if err != nil {
 			return err
 		}
 		fmt.Print(script)
 		return nil
 	case "__complete":
-		return runCompletion(store, args[1:])
+		return runCompletion(store, commandArgs)
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf("unknown command %q", command)
 	}
 }
 
@@ -221,17 +225,53 @@ func defaultStorePath() (string, error) {
 	return app.DefaultStorePath()
 }
 
+func resolveCommandStore(args []string) (string, string, []string, error) {
+	if len(args) == 0 {
+		return "", "", nil, errors.New("missing command")
+	}
+
+	command := args[0]
+	storePath, err := defaultStorePath()
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	commandArgs := make([]string, 0, len(args)-1)
+	for i := 1; i < len(args); i++ {
+		if args[i] == "--store" {
+			if i+1 >= len(args) {
+				return "", "", nil, errors.New("--store requires a path")
+			}
+			storePath = args[i+1]
+			i++
+			continue
+		}
+		if strings.HasPrefix(args[i], "--store=") {
+			storePath = strings.TrimPrefix(args[i], "--store=")
+			continue
+		}
+		commandArgs = append(commandArgs, args[i])
+	}
+
+	if strings.TrimSpace(storePath) == "" {
+		return "", "", nil, errors.New("--store requires a non-empty path")
+	}
+	return command, storePath, commandArgs, nil
+}
+
 func printUsage() {
 	fmt.Print(`looplane keeps stable names for flaky local dev ports.
 
 Usage:
-  looplane add NAME URL                        Add or update a named upstream route
-  looplane rm NAME                             Remove a route
-  looplane import devport-radar [--file PATH] [--replace]
+  looplane add NAME URL [--store PATH]         Add or update a named upstream route
+  looplane rm NAME [--store PATH]              Remove a route
+  looplane import devport-radar [--file PATH] [--replace] [--store PATH]
                                               Import routes from devport-radar --json output
-  looplane ls [--check] [--json] [--timeout D] List routes (optionally probe health)
-  looplane serve [--addr A]                    Start reverse proxy (default 127.0.0.1:7777)
-  looplane open NAME [--addr A]                Print the stable URL for a configured route
+  looplane ls [--check] [--json] [--timeout D] [--store PATH]
+                                              List routes (optionally probe health)
+  looplane serve [--addr A] [--watch] [--store PATH]
+                                              Start reverse proxy (default 127.0.0.1:7777)
+  looplane open NAME [--addr A] [--store PATH] Print the stable URL for a configured route
   looplane completion SHELL                    Print a shell completion script
 
 Examples:
@@ -243,6 +283,8 @@ Examples:
   looplane ls --json
   looplane open api
   looplane serve --addr 127.0.0.1:7777
+  looplane ls --store ./looplane.routes.json
+  looplane serve --store ./looplane.routes.json --watch
   looplane completion bash > ~/.local/share/bash-completion/completions/looplane
   curl http://127.0.0.1:7777/api/healthz
 `)
@@ -308,14 +350,14 @@ _looplane() {
 
     case "${words[1]}" in
         ls)
-            COMPREPLY=( $(compgen -W "--check --json --timeout" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--check --json --timeout --store" -- "$cur") )
             ;;
         serve)
-            COMPREPLY=( $(compgen -W "--addr" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--addr --watch --store" -- "$cur") )
             ;;
         open)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "--addr" -- "$cur") )
+                COMPREPLY=( $(compgen -W "--addr --store" -- "$cur") )
                 return
             fi
             local routes
@@ -323,7 +365,7 @@ _looplane() {
             COMPREPLY=( $(compgen -W "$routes" -- "$cur") )
             ;;
         import)
-            COMPREPLY=( $(compgen -W "devport-radar --file --replace" -- "$cur") )
+            COMPREPLY=( $(compgen -W "devport-radar --file --replace --store" -- "$cur") )
             ;;
         completion)
             COMPREPLY=( $(compgen -W "bash zsh fish powershell" -- "$cur") )
@@ -357,13 +399,13 @@ _looplane() {
           _looplane_routes
           ;;
         import)
-          _arguments '1:source:(devport-radar)' '--file[path to devport-radar JSON]:file:_files' '--replace[replace existing routes instead of merging]'
+          _arguments '1:source:(devport-radar)' '--file[path to devport-radar JSON]:file:_files' '--replace[replace existing routes instead of merging]' '--store[path to routes store]:file:_files'
           ;;
         ls)
-          _arguments '--check[probe upstream health for each route]' '--json[emit routes as JSON]' '--timeout[health check timeout]:duration:'
+          _arguments '--check[probe upstream health for each route]' '--json[emit routes as JSON]' '--timeout[health check timeout]:duration:' '--store[path to routes store]:file:_files'
           ;;
         serve)
-          _arguments '--addr[listen address]:address:'
+          _arguments '--addr[listen address]:address:' '--watch[reload routes from the selected store on each request]' '--store[path to routes store]:file:_files'
           ;;
         completion)
           _arguments '1:shell:(bash zsh fish powershell)'
@@ -389,7 +431,9 @@ complete -c looplane -n '__fish_seen_subcommand_from import' -f -a 'devport-rada
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l check -d 'Probe upstream health for each route'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l json -d 'Emit routes as JSON'
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l timeout -d 'Health check timeout' -r
+complete -c looplane -n '__fish_seen_subcommand_from ls import serve open rm' -l store -d 'Path to routes store' -r
 complete -c looplane -n '__fish_seen_subcommand_from serve open' -l addr -d 'Listen/proxy address' -r
+complete -c looplane -n '__fish_seen_subcommand_from serve' -l watch -d 'Reload routes from the selected store on each request'
 complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to devport-radar JSON' -r
 complete -c looplane -n '__fish_seen_subcommand_from import' -l replace -d 'Replace existing routes instead of merging'
 complete -c looplane -n '__fish_seen_subcommand_from completion' -f -a 'bash zsh fish powershell'
@@ -420,27 +464,27 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane _
 
     switch ($tokens[1]) {
         'import' {
-            @('devport-radar', '--file', '--replace') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('devport-radar', '--file', '--replace', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }
         'ls' {
-            @('--check', '--json', '--timeout') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('--check', '--json', '--timeout', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }
         'serve' {
-            @('--addr') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('--addr', '--watch', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }
         'open' {
-            @('--addr') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('--addr', '--store') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }
         'rm' {
-            $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('--store') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }

@@ -51,8 +51,9 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Print stable route URLs with `looplane open NAME`
 - Generate shell completions with `looplane completion [bash|zsh|fish|powershell]`
 - Store-backed route-name completion for `looplane open` and `looplane rm`
+- Optional shared route config via `--store PATH` across route and serve commands
 - Start a local reverse proxy with `looplane serve`
-- Live-reload served routes when `add`, `rm`, or `import` updates the store
+- Live-reload served routes when the selected store changes
 - Path-prefix routing (`/api/...`, `/docs/...`)
 - Upstream path preservation (`http://target/base` + `/docs/page` => `/base/page`)
 - Helpful plaintext index page at `/`
@@ -93,7 +94,20 @@ looplane open api
 looplane serve --addr 127.0.0.1:7777
 ```
 
-While `looplane serve` is running, later `add`, `rm`, and `import` changes are picked up on the next request, so you do not need to restart the proxy to refresh the route map.
+While `looplane serve --watch` is running, later `add`, `rm`, and `import` changes are picked up on the next request, so you do not need to restart the proxy to refresh the route map.
+
+### Shared route config
+
+Use `--store PATH` when a repo, devcontainer, or team workflow needs a shared route file instead of the default per-user store:
+
+```bash
+looplane add api http://127.0.0.1:3000 --store ./.looplane/routes.json
+looplane import devport-radar --file radar.json --store ./.looplane/routes.json
+looplane ls --store ./.looplane/routes.json
+looplane serve --store ./.looplane/routes.json --watch
+```
+
+This keeps the single-user default simple while making shared route maps explicit and portable.
 
 Then open:
 
@@ -129,29 +143,18 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, and live route reloads for a running proxy are already in place. Route-name completion for `open` and `rm` is now store-backed, so the interactive UX follows the saved config directly.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, optional shared stores, and watch-mode route reloads for a running proxy are already in place. Route-name completion for `open` and `rm` is store-backed, so the interactive UX follows the selected config directly. GitHub Actions now runs `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
-- optional file-watch mode for shared team route config
+- improve shell completion support for shared `--store` workflows
 - import from additional local scanners beyond `devport-radar`
 - TUI dashboard for route health + quick switching
 - optional host-based routing (`api.localtest.me` style)
 
 ## Minimal release plan
 
-### v0.5.0 — interactive polish
-
-- complete test coverage for zsh + PowerShell completion output
-- keep the default branch releaseable with `go test ./...` green
-
-### v0.6.0 — team/shared workflow
-
-- add CI coverage for pushes, PRs, and tagged releases
-- support shared route config files plus optional watch mode
-- document the single-user vs shared-route workflow clearly
-
-### v0.7.0 — broader local routing surface
+### v0.6.1 — broader local routing surface
 
 - import from additional local scanner formats
 - optional host-based routing (`api.localtest.me` style)

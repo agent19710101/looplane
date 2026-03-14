@@ -135,6 +135,38 @@ func TestRunCompletionFish(t *testing.T) {
 	}
 }
 
+func TestRunCompletionZsh(t *testing.T) {
+	stdout, stderr, err := captureRunOutput([]string{"completion", "zsh"})
+	if err != nil {
+		t.Fatalf("completion zsh: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "#compdef looplane") {
+		t.Fatalf("unexpected zsh completion output: %s", stdout)
+	}
+	if !strings.Contains(stdout, "looplane __complete routes") {
+		t.Fatalf("zsh completion missing direct route completion: %s", stdout)
+	}
+	if !strings.Contains(stdout, "rm|open") {
+		t.Fatalf("zsh completion missing route-aware rm/open handling: %s", stdout)
+	}
+}
+
+func TestRunCompletionPowerShell(t *testing.T) {
+	stdout, stderr, err := captureRunOutput([]string{"completion", "powershell"})
+	if err != nil {
+		t.Fatalf("completion powershell: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Register-ArgumentCompleter -Native -CommandName looplane") {
+		t.Fatalf("unexpected PowerShell completion output: %s", stdout)
+	}
+	if !strings.Contains(stdout, "looplane __complete routes $wordToComplete") {
+		t.Fatalf("PowerShell completion missing direct route completion: %s", stdout)
+	}
+	if !strings.Contains(stdout, "'open'") || !strings.Contains(stdout, "'rm'") {
+		t.Fatalf("PowerShell completion missing route-aware open/rm handling: %s", stdout)
+	}
+}
+
 func TestRunCompletionRejectsUnsupportedShell(t *testing.T) {
 	_, _, err := captureRunOutput([]string{"completion", "nushell"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported shell") {
@@ -199,6 +231,38 @@ func captureRunOutput(args []string) (string, string, error) {
 	_ = stderrR.Close()
 
 	return stdoutBuf.String(), stderrBuf.String(), runErr
+}
+
+func TestRunSupportsSharedStorePath(t *testing.T) {
+	sharedDir := t.TempDir()
+	sharedStore := filepath.Join(sharedDir, "team", "routes.json")
+
+	if err := run([]string{"add", "api", "http://127.0.0.1:3000", "--store", sharedStore}); err != nil {
+		t.Fatalf("add route with shared store: %v", err)
+	}
+
+	stdout, stderr, err := captureRunOutput([]string{"ls", "--json", "--store", sharedStore})
+	if err != nil {
+		t.Fatalf("ls --json with shared store: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "\"name\": \"api\"") {
+		t.Fatalf("shared store output missing route: %s", stdout)
+	}
+
+	stdout, stderr, err = captureRunOutput([]string{"open", "api", "--store", sharedStore})
+	if err != nil {
+		t.Fatalf("open with shared store: %v\nstderr=%s", err, stderr)
+	}
+	if got := strings.TrimSpace(stdout); got != "http://127.0.0.1:7777/api/" {
+		t.Fatalf("unexpected open output from shared store: %q", got)
+	}
+}
+
+func TestResolveCommandStoreRejectsMissingPath(t *testing.T) {
+	_, _, _, err := resolveCommandStore([]string{"ls", "--store"})
+	if err == nil || !strings.Contains(err.Error(), "--store requires a path") {
+		t.Fatalf("expected missing store path error, got %v", err)
+	}
 }
 
 func TestDefaultStorePathUsesXDGConfigHome(t *testing.T) {
