@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -151,6 +152,7 @@ func run(args []string) error {
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 		addr := fs.String("addr", "127.0.0.1:7777", "listen address")
+		hostSuffix := fs.String("host-suffix", "", "optional host-based routing suffix (for example localtest.me)")
 		watch := fs.Bool("watch", true, "reload routes from the selected store on each request")
 		if err := fs.Parse(commandArgs); err != nil {
 			return err
@@ -159,7 +161,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		srv := &app.Server{Addr: *addr, Routes: routes, Stdout: os.Stdout}
+		srv := &app.Server{Addr: *addr, HostSuffix: strings.TrimPrefix(strings.ToLower(strings.TrimSpace(*hostSuffix)), "."), Routes: routes, Stdout: os.Stdout}
 		if *watch {
 			srv.LoadRoutes = store.Load
 		}
@@ -169,6 +171,11 @@ func run(args []string) error {
 		} else {
 			for _, route := range routes {
 				fmt.Printf("- http://%s/%s/ -> %s\n", *addr, route.Name, route.URL)
+				if srv.HostSuffix != "" {
+					if hostURL, err := hostRouteURL(*addr, route.Name, srv.HostSuffix); err == nil {
+						fmt.Printf("- %s -> %s\n", hostURL, route.URL)
+					}
+				}
 			}
 		}
 		return http.ListenAndServe(*addr, srv.Handler())
@@ -181,6 +188,7 @@ func run(args []string) error {
 		}
 		fs := flag.NewFlagSet("open", flag.ContinueOnError)
 		addr := fs.String("addr", "127.0.0.1:7777", "looplane proxy address")
+		hostSuffix := fs.String("host-suffix", "", "optional host-based routing suffix (for example localtest.me)")
 		if err := fs.Parse(openArgs); err != nil {
 			return err
 		}
@@ -198,6 +206,15 @@ func run(args []string) error {
 		}
 		if _, ok := app.FindRoute(routes, routeName); !ok {
 			return fmt.Errorf("route %s not found", routeName)
+		}
+		normalizedHostSuffix := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(*hostSuffix)), ".")
+		if normalizedHostSuffix != "" {
+			url, err := hostRouteURL(*addr, routeName, normalizedHostSuffix)
+			if err != nil {
+				return err
+			}
+			fmt.Println(url)
+			return nil
 		}
 		fmt.Printf("http://%s/%s/\n", strings.TrimSuffix(*addr, "/"), routeName)
 		return nil
@@ -259,6 +276,27 @@ func resolveCommandStore(args []string) (string, string, []string, error) {
 	return command, storePath, commandArgs, nil
 }
 
+func hostRouteURL(addr string, routeName string, hostSuffix string) (string, error) {
+	hostSuffix = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(hostSuffix)), ".")
+	if hostSuffix == "" {
+		return "", errors.New("host suffix is required")
+	}
+	host := strings.TrimSpace(addr)
+	if strings.Contains(host, "://") {
+		return "", errors.New("addr should be host:port, not a full URL")
+	}
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		if h == "" || h == "0.0.0.0" || h == "::" || h == "[::]" {
+			h = "127.0.0.1"
+		}
+		if h == "127.0.0.1" || h == "localhost" {
+			return fmt.Sprintf("http://%s.%s:%s/", routeName, hostSuffix, p), nil
+		}
+		return fmt.Sprintf("http://%s.%s:%s/", routeName, hostSuffix, p), nil
+	}
+	return fmt.Sprintf("http://%s.%s/", routeName, hostSuffix), nil
+}
+
 func printUsage() {
 	fmt.Print(`looplane keeps stable names for flaky local dev ports.
 
@@ -269,9 +307,10 @@ Usage:
                                               Import routes from devport-radar --json output
   looplane ls [--check] [--json] [--timeout D] [--store PATH]
                                               List routes (optionally probe health)
-  looplane serve [--addr A] [--watch] [--store PATH]
+  looplane serve [--addr A] [--host-suffix SUFFIX] [--watch] [--store PATH]
                                               Start reverse proxy (default 127.0.0.1:7777)
-  looplane open NAME [--addr A] [--store PATH] Print the stable URL for a configured route
+  looplane open NAME [--addr A] [--host-suffix SUFFIX] [--store PATH]
+                                              Print the stable URL for a configured route
   looplane completion SHELL                    Print a shell completion script
 
 Examples:
@@ -282,7 +321,9 @@ Examples:
   looplane ls --check
   looplane ls --json
   looplane open api
+  looplane open api --host-suffix localtest.me
   looplane serve --addr 127.0.0.1:7777
+  looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me
   looplane ls --store ./looplane.routes.json
   looplane serve --store ./looplane.routes.json --watch
   looplane completion bash > ~/.local/share/bash-completion/completions/looplane
@@ -401,11 +442,11 @@ _looplane() {
             COMPREPLY=( $(compgen -W "--check --json --timeout --store" -- "$cur") )
             ;;
         serve)
-            COMPREPLY=( $(compgen -W "--addr --watch --store" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--addr --host-suffix --watch --store" -- "$cur") )
             ;;
         open)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "--addr --store" -- "$cur") )
+                COMPREPLY=( $(compgen -W "--addr --host-suffix --store" -- "$cur") )
                 return
             fi
             local routes
@@ -475,7 +516,7 @@ _looplane() {
           _arguments '--check[probe upstream health for each route]' '--json[emit routes as JSON]' '--timeout[health check timeout]:duration:' '--store[path to routes store]:file:_files'
           ;;
         serve)
-          _arguments '--addr[listen address]:address:' '--watch[reload routes from the selected store on each request]' '--store[path to routes store]:file:_files'
+          _arguments '--addr[listen address]:address:' '--host-suffix[optional host-based routing suffix]:suffix:' '--watch[reload routes from the selected store on each request]' '--store[path to routes store]:file:_files'
           ;;
         completion)
           _arguments '1:shell:(bash zsh fish powershell)'
@@ -521,6 +562,7 @@ complete -c looplane -n '__fish_seen_subcommand_from ls' -l json -d 'Emit routes
 complete -c looplane -n '__fish_seen_subcommand_from ls' -l timeout -d 'Health check timeout' -r
 complete -c looplane -n '__fish_seen_subcommand_from ls import serve open rm' -l store -d 'Path to routes store' -r
 complete -c looplane -n '__fish_seen_subcommand_from serve open' -l addr -d 'Listen/proxy address' -r
+complete -c looplane -n '__fish_seen_subcommand_from serve open' -l host-suffix -d 'Optional host-based routing suffix'
 complete -c looplane -n '__fish_seen_subcommand_from serve' -l watch -d 'Reload routes from the selected store on each request'
 complete -c looplane -n '__fish_seen_subcommand_from import' -l file -d 'Path to devport-radar JSON' -r
 complete -c looplane -n '__fish_seen_subcommand_from import' -l replace -d 'Replace existing routes instead of merging'
@@ -574,12 +616,12 @@ complete -c looplane -n '__fish_seen_subcommand_from rm open' -f -a '(looplane _
             }
         }
         'serve' {
-            @('--addr', '--watch', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('--addr', '--host-suffix', '--watch', '--store') | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }
         'open' {
-            @('--addr', '--store') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            @('--addr', '--host-suffix', '--store') + $routeNames | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
                 [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
             }
         }

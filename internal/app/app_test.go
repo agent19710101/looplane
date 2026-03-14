@@ -224,3 +224,46 @@ func response(req *http.Request, status int, body string) *http.Response {
 		Request:    req,
 	}
 }
+
+func TestServerHandlerRoutesByHostSuffix(t *testing.T) {
+	var seenPath string
+	var seenPrefix string
+	var seenRoute string
+
+	server := &Server{
+		Addr:       "127.0.0.1:7777",
+		HostSuffix: "localtest.me",
+		Routes:     []Route{{Name: "api", URL: "http://upstream.test/base"}},
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			seenPath = req.URL.Path
+			seenPrefix = req.Header.Get("X-Forwarded-Prefix")
+			seenRoute = req.Header.Get("X-Looplane-Route")
+			return response(req, http.StatusOK, req.URL.Path+"|"+seenPrefix+"|"+seenRoute), nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://api.localtest.me:7777/users?id=42", nil)
+	req.Host = "api.localtest.me:7777"
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); !strings.Contains(got, "/base/users||api") {
+		t.Fatalf("unexpected proxy output: %q", got)
+	}
+	if seenPath != "/base/users" || seenPrefix != "" || seenRoute != "api" {
+		t.Fatalf("unexpected host-routed request: path=%q prefix=%q route=%q", seenPath, seenPrefix, seenRoute)
+	}
+}
+
+func TestIndexIncludesHostBasedURLs(t *testing.T) {
+	server := &Server{Addr: "127.0.0.1:7777", HostSuffix: "localtest.me", Routes: []Route{{Name: "web", URL: "http://127.0.0.1:3000"}}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	server.Handler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "http://web.localtest.me:7777/ -> http://127.0.0.1:3000") {
+		t.Fatalf("index missing host-based route: %q", rec.Body.String())
+	}
+}

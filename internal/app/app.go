@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -218,6 +219,7 @@ func probeRoute(client *http.Client, method string, rawURL string) (int, error) 
 
 type Server struct {
 	Addr       string
+	HostSuffix string
 	Routes     []Route
 	LoadRoutes func() ([]Route, error)
 	Stdout     io.Writer
@@ -247,20 +249,17 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, fmt.Sprintf("load routes: %v", err), http.StatusInternalServerError)
 			return
 		}
-		if r.URL.Path == "/" {
-			writeIndex(w, s.Addr, routes)
-			return
-		}
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-		if len(parts) == 0 || parts[0] == "" {
-			http.NotFound(w, r)
-			return
-		}
-		route, ok := routesByName(routes)[parts[0]]
+
+		route, routePath, prefix, ok := s.resolveRoute(routes, r)
 		if !ok {
+			if r.URL.Path == "/" {
+				writeIndex(w, s.Addr, s.HostSuffix, routes)
+				return
+			}
 			http.NotFound(w, r)
 			return
 		}
+
 		target, err := url.Parse(route.URL)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("invalid target for %s: %v", route.Name, err), http.StatusInternalServerError)
@@ -273,17 +272,15 @@ func (s *Server) Handler() http.Handler {
 		originalDirector := proxy.Director
 		proxy.Director = func(req *http.Request) {
 			originalDirector(req)
-			suffix := "/"
-			if len(parts) > 1 {
-				suffix += strings.Join(parts[1:], "/")
-			}
-			req.URL.Path = joinURLPath(target.Path, suffix)
+			req.URL.Path = joinURLPath(target.Path, routePath)
 			req.URL.RawPath = req.URL.EscapedPath()
 			req.Host = target.Host
 			if r.URL.RawQuery != "" {
 				req.URL.RawQuery = r.URL.RawQuery
 			}
-			req.Header.Set("X-Forwarded-Prefix", "/"+route.Name)
+			if prefix != "" {
+				req.Header.Set("X-Forwarded-Prefix", prefix)
+			}
 			req.Header.Set("X-Looplane-Route", route.Name)
 		}
 		proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
@@ -294,7 +291,43 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func writeIndex(w http.ResponseWriter, addr string, routes []Route) {
+func (s *Server) resolveRoute(routes []Route, r *http.Request) (Route, string, string, bool) {
+	if route, ok := s.resolveRouteByHost(routes, r.Host); ok {
+		return route, routePathFromRequest(r.URL.Path), "", true
+	}
+
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return Route{}, "", "", false
+	}
+	route, ok := routesByName(routes)[parts[0]]
+	if !ok {
+		return Route{}, "", "", false
+	}
+	suffix := "/"
+	if len(parts) > 1 {
+		suffix += strings.Join(parts[1:], "/")
+	}
+	return route, suffix, "/" + route.Name, true
+}
+
+func (s *Server) resolveRouteByHost(routes []Route, host string) (Route, bool) {
+	if s.HostSuffix == "" {
+		return Route{}, false
+	}
+	host = stripPort(host)
+	suffix := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(s.HostSuffix), "."))
+	if host == suffix || !strings.HasSuffix(host, "."+suffix) {
+		return Route{}, false
+	}
+	name := strings.TrimSuffix(host, "."+suffix)
+	if strings.Contains(name, ".") || name == "" {
+		return Route{}, false
+	}
+	return FindRoute(routes, name)
+}
+
+func writeIndex(w http.ResponseWriter, addr string, hostSuffix string, routes []Route) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = fmt.Fprintf(w, "looplane proxy on %s\n\n", addr)
 	if len(routes) == 0 {
@@ -304,7 +337,36 @@ func writeIndex(w http.ResponseWriter, addr string, routes []Route) {
 	_, _ = io.WriteString(w, "Routes:\n")
 	for _, route := range routes {
 		_, _ = fmt.Fprintf(w, "- /%s/ -> %s\n", route.Name, route.URL)
+		if hostSuffix != "" {
+			_, _ = fmt.Fprintf(w, "- http://%s.%s%s/ -> %s\n", route.Name, hostSuffix, addrPortSuffix(addr), route.URL)
+		}
 	}
+}
+
+func routePathFromRequest(path string) string {
+	if path == "" || path == "/" {
+		return "/"
+	}
+	return "/" + strings.TrimPrefix(path, "/")
+}
+
+func stripPort(hostport string) string {
+	if strings.HasPrefix(hostport, "[") {
+		if end := strings.Index(hostport, "]"); end != -1 {
+			return strings.ToLower(hostport[1:end])
+		}
+	}
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		return strings.ToLower(h)
+	}
+	return strings.ToLower(hostport)
+}
+
+func addrPortSuffix(addr string) string {
+	if _, port, err := net.SplitHostPort(addr); err == nil {
+		return ":" + port
+	}
+	return ""
 }
 
 func joinURLPath(base string, extra string) string {

@@ -306,3 +306,53 @@ func TestDefaultStorePathUsesXDGConfigHome(t *testing.T) {
 		t.Fatalf("unexpected store path: got %q want %q", path, want)
 	}
 }
+
+func TestRunOpenSupportsHostSuffix(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	if err := run([]string{"add", "api", "http://127.0.0.1:3000"}); err != nil {
+		t.Fatalf("add route: %v", err)
+	}
+
+	stdout, stderr, err := captureRunOutput([]string{"open", "api", "--host-suffix", "localtest.me"})
+	if err != nil {
+		t.Fatalf("open route with host suffix: %v\nstderr=%s", err, stderr)
+	}
+	if got := strings.TrimSpace(stdout); got != "http://api.localtest.me:7777/" {
+		t.Fatalf("unexpected host-based open output: %q", got)
+	}
+}
+
+func TestRunCompletionIncludesHostSuffixFlags(t *testing.T) {
+	stdout, stderr, err := captureRunOutput([]string{"completion", "bash"})
+	if err != nil {
+		t.Fatalf("completion bash: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "--addr --host-suffix --watch --store") || !strings.Contains(stdout, "--addr --host-suffix --store") {
+		t.Fatalf("bash completion missing host-suffix flags: %s", stdout)
+	}
+
+	stdout, stderr, err = captureRunOutput([]string{"completion", "zsh"})
+	if err != nil {
+		t.Fatalf("completion zsh: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "--host-suffix[optional host-based routing suffix]") {
+		t.Fatalf("zsh completion missing host-suffix flag: %s", stdout)
+	}
+
+	stdout, stderr, err = captureRunOutput([]string{"completion", "fish"})
+	if err != nil {
+		t.Fatalf("completion fish: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "-l host-suffix") {
+		t.Fatalf("fish completion missing host-suffix flag: %s", stdout)
+	}
+
+	stdout, stderr, err = captureRunOutput([]string{"completion", "powershell"})
+	if err != nil {
+		t.Fatalf("completion powershell: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "'--host-suffix'") {
+		t.Fatalf("powershell completion missing host-suffix flag: %s", stdout)
+	}
+}

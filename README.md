@@ -53,6 +53,7 @@ What is still oddly manual is the last mile: **giving those local services stabl
 - Store-backed route-name completion for `looplane open` and `looplane rm`
 - Optional shared route config via `--store PATH` across route and serve commands
 - Start a local reverse proxy with `looplane serve`
+- Optional host-based routing with `looplane serve --host-suffix localtest.me`
 - Live-reload served routes when the selected store changes
 - Path-prefix routing (`/api/...`, `/docs/...`)
 - Upstream path preservation (`http://target/base` + `/docs/page` => `/base/page`)
@@ -91,7 +92,9 @@ looplane import devport-radar --file radar.json
 looplane ls --check
 looplane ls --json
 looplane open api
+looplane open api --host-suffix localtest.me
 looplane serve --addr 127.0.0.1:7777
+looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me
 ```
 
 While `looplane serve --watch` is running, later `add`, `rm`, and `import` changes are picked up on the next request, so you do not need to restart the proxy to refresh the route map.
@@ -117,6 +120,18 @@ curl http://127.0.0.1:7777/
 curl http://127.0.0.1:7777/api/healthz
 curl http://127.0.0.1:7777/docs/
 ```
+
+### Host-based routing
+
+If you prefer memorable per-service hostnames, start the proxy with a wildcard local domain such as `localtest.me`:
+
+```bash
+looplane serve --addr 127.0.0.1:7777 --host-suffix localtest.me
+looplane open api --host-suffix localtest.me
+# -> http://api.localtest.me:7777/
+```
+
+With host-based routing enabled, requests for `api.localtest.me:7777` go straight to the `api` route root, so you can use hostnames instead of `/api/...` path prefixes when that fits your workflow better.
 
 ## Example output
 
@@ -144,26 +159,27 @@ http://127.0.0.1:7777/api/
 
 ## Status
 
-Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, optional shared stores, and watch-mode route reloads for a running proxy are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. GitHub Actions now runs `go test ./...` on pushes, pull requests, tags, and published releases.
+Early, usable v0.x project. Core route persistence and stable local proxying work today. Health checks, JSON route listing, stable URL printing, `devport-radar` snapshot import, generated shell completions, optional shared stores, host-based routing via `--host-suffix`, and watch-mode route reloads for a running proxy are already in place. Route-name completion for `open` and `rm` is store-backed, including shared `--store PATH` workflows, so the interactive UX follows the selected config directly. GitHub Actions now runs `go test ./...` on pushes, pull requests, tags, and published releases.
 
 ## Roadmap
 
 - import from additional local scanners beyond `devport-radar`
 - TUI dashboard for route health + quick switching
-- optional host-based routing (`api.localtest.me` style)
+- evaluate whether host-based routing needs HTTPS/dev-cert helpers later
 
 ## Minimal release plan
 
-### v0.6.1 — shared-store completion polish
+### v0.7.0 — host-based local routing
 
-- shell completions for `open` and `rm` now follow the active `--store PATH`
-- tightened completion coverage with shared-store regression tests across CLI/completion flows
+- added optional `looplane serve --host-suffix localtest.me` routing for URLs like `http://api.localtest.me:7777/`
+- taught `looplane open --host-suffix ...` and shell completions about the new host-based workflow
+- added regression coverage for host-based proxy resolution and README examples for both path and host routing
 
 ### Next up
 
 - import from additional local scanner formats
-- optional host-based routing (`api.localtest.me` style)
-- evaluate whether a TUI dashboard is still the best next UX layer
+- TUI dashboard for route health + quick switching
+- evaluate whether host-based routing needs HTTPS/dev-cert helpers later
 
 ## Development
 
