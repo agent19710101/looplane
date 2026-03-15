@@ -251,9 +251,9 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 
 ## Roadmap
 
-- consider clipboard/open integration for the dashboard once the small dependency-free command set settles
-- consider a Kubernetes-friendly import path after the current proxy/correctness issues are closed
-- consider lightweight dev-cert generation helpers on top of the existing `--tls-cert` / `--tls-key` flow
+- [ ] #15 dashboard quick actions for opening or copying stable URLs without bloating the core binary
+- [ ] #16 Kubernetes-friendly import path for `kubectl get svc` / `kubectl get ingress` snapshots
+- [ ] #17 lightweight local dev-cert generation helpers on top of the existing `--tls-cert` / `--tls-key` flow
 
 ## Minimal release plan
 
@@ -269,9 +269,23 @@ Early, usable v0.x project. Core route persistence and stable local proxying wor
 - kept the first cut dependency-free and built directly on the existing route store, health probes, and `open`/`serve` flows
 - gracefully falls back to path-based stable URLs when a route name is valid for path routing but not DNS-safe for host-based routing
 
-### Next
+### v0.14.x — dashboard quick actions
 
-- consider clipboard/open integration for dashboard quick actions without bloating the core binary
+- add an optional `looplane open --browser` / dashboard action path that opens the selected stable URL directly from the CLI
+- add a small clipboard integration path for copying stable URLs when common platform tools are present, while keeping graceful no-dependency fallback behavior
+- keep the dashboard output scriptable and dependency-free by treating browser/clipboard support as thin optional integrations
+
+### v0.15.x — Kubernetes import
+
+- import routes from `kubectl get svc` and `kubectl get ingress` snapshots so cluster-local apps can be projected into the same stable local naming model
+- normalize namespace/resource metadata into deterministic route names and labels that still play well with path-based and host-based routing
+- preserve the existing snapshot-driven import model so agents can compose `kubectl ... -o json | looplane import kubernetes`
+
+### v0.16.x — local TLS ergonomics
+
+- add a helper flow for generating or wiring local dev certificates into `looplane serve --tls-cert --tls-key`
+- document the security model clearly so the project stays useful for localhost workflows without pretending to be a general PKI layer
+- keep TLS helpers additive: the manual cert/key path must remain the simplest stable fallback
 
 ## Development
 
