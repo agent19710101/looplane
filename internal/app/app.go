@@ -49,6 +49,9 @@ type routeFile struct {
 }
 
 func DefaultStorePath() (string, error) {
+	if cfg := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); cfg != "" {
+		return filepath.Join(cfg, "looplane", "routes.json"), nil
+	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve config dir: %w", err)

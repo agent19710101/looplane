@@ -71,17 +71,18 @@ func TestRunImportDevportRadar(t *testing.T) {
 
 	oldStdin := os.Stdin
 	defer func() { os.Stdin = oldStdin }()
-	input, err := os.CreateTemp(t.TempDir(), "radar-*.json")
+	inputR, inputW, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("CreateTemp: %v", err)
+		t.Fatalf("Pipe: %v", err)
 	}
-	if _, err := input.WriteString(`[{"port":3000,"protocol":"http","alias":"api"}]`); err != nil {
+	if _, err := inputW.WriteString(`[{"port":3000,"protocol":"http","alias":"api"}]`); err != nil {
 		t.Fatalf("WriteString: %v", err)
 	}
-	if _, err := input.Seek(0, 0); err != nil {
-		t.Fatalf("Seek: %v", err)
+	if err := inputW.Close(); err != nil {
+		t.Fatalf("Close input writer: %v", err)
 	}
-	os.Stdin = input
+	defer inputR.Close()
+	os.Stdin = inputR
 
 	stdout, stderr, err := captureRunOutput([]string{"import", "devport-radar"})
 	if err != nil {
@@ -105,17 +106,18 @@ func TestRunImportDockerPS(t *testing.T) {
 
 	oldStdin := os.Stdin
 	defer func() { os.Stdin = oldStdin }()
-	input, err := os.CreateTemp(t.TempDir(), "docker-*.jsonl")
+	inputR, inputW, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("CreateTemp: %v", err)
+		t.Fatalf("Pipe: %v", err)
 	}
-	if _, err := input.WriteString("{\"Names\":\"api\",\"Image\":\"ghcr.io/acme/api:latest\",\"Ports\":\"0.0.0.0:8080->80/tcp\"}\n"); err != nil {
+	if _, err := inputW.WriteString("{\"Names\":\"api\",\"Image\":\"ghcr.io/acme/api:latest\",\"Ports\":\"0.0.0.0:8080->80/tcp\"}\n"); err != nil {
 		t.Fatalf("WriteString: %v", err)
 	}
-	if _, err := input.Seek(0, 0); err != nil {
-		t.Fatalf("Seek: %v", err)
+	if err := inputW.Close(); err != nil {
+		t.Fatalf("Close input writer: %v", err)
 	}
-	os.Stdin = input
+	defer inputR.Close()
+	os.Stdin = inputR
 
 	stdout, stderr, err := captureRunOutput([]string{"import", "docker-ps"})
 	if err != nil {
@@ -139,17 +141,18 @@ func TestRunImportDockerComposePS(t *testing.T) {
 
 	oldStdin := os.Stdin
 	defer func() { os.Stdin = oldStdin }()
-	input, err := os.CreateTemp(t.TempDir(), "compose-*.json")
+	inputR, inputW, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("CreateTemp: %v", err)
+		t.Fatalf("Pipe: %v", err)
 	}
-	if _, err := input.WriteString(`[{"Service":"api","Name":"demo-api-1","Publishers":[{"PublishedPort":8080}]}]`); err != nil {
+	if _, err := inputW.WriteString(`[{"Service":"api","Name":"demo-api-1","Publishers":[{"PublishedPort":8080}]}]`); err != nil {
 		t.Fatalf("WriteString: %v", err)
 	}
-	if _, err := input.Seek(0, 0); err != nil {
-		t.Fatalf("Seek: %v", err)
+	if err := inputW.Close(); err != nil {
+		t.Fatalf("Close input writer: %v", err)
 	}
-	os.Stdin = input
+	defer inputR.Close()
+	os.Stdin = inputR
 
 	stdout, stderr, err := captureRunOutput([]string{"import", "docker-compose-ps"})
 	if err != nil {
